@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama import OllamaLLM
 from langchain_community.vectorstores import PGVector
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from psycopg2 import sql
 
 PROFILE_ENV_FILES = {
@@ -31,6 +30,14 @@ def _normalize_profile(value: str | None) -> str:
 
 
 def _load_profile_env() -> str:
+    explicit_env_file = os.getenv("DOTENV_FILE", "").strip()
+    if explicit_env_file:
+        load_dotenv(explicit_env_file)
+        profile = _normalize_profile(os.getenv("APP_ENV") or os.getenv("ENV"))
+        os.environ.setdefault("APP_ENV", profile)
+        os.environ.setdefault("ENV", profile)
+        return profile
+
     profile = _normalize_profile(os.getenv("APP_ENV") or os.getenv("ENV"))
     env_file = PROFILE_ENV_FILES[profile]
     load_dotenv(env_file)
@@ -62,10 +69,16 @@ def _first_env(*names: str, default: str = "") -> str:
 class RuntimeSettings:
     env: str
     postgres_url: str
+    redis_url: str
     collection_name: str
     embedding_model: str
+    embedding_batch_size: int
     llm_model: str
     ollama_url: str
+    jwt_secret_key: str
+    access_token_expire_minutes: int
+    enable_ocr: bool
+    ocr_languages: str
 
 
 def _load_runtime_settings() -> RuntimeSettings:
@@ -81,32 +94,42 @@ def _load_runtime_settings() -> RuntimeSettings:
     return RuntimeSettings(
         env=env,
         postgres_url=_first_env("POSTGRES_URL", "DATABASE_URL", default=postgres_url_default),
+        redis_url=_first_env("REDIS_URL", default="redis://localhost:6379/0"),
         collection_name=_first_env("COLLECTION_NAME", default="pdf_docs"),
         embedding_model=_first_env(
             "EMBEDDING_MODEL",
             default=DEFAULT_EMBEDDING_MODEL,
         ),
+        embedding_batch_size=max(
+            1,
+            int(_first_env("EMBEDDING_BATCH_SIZE", default="16")),
+        ),
         llm_model=_first_env("LLM_MODEL", "OLLAMA_MODEL", default=llm_default),
         ollama_url=_first_env("OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default),
+        jwt_secret_key=_first_env("JWT_SECRET_KEY", default="change-me-in-production"),
+        access_token_expire_minutes=int(_first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")),
+        enable_ocr=_first_env("ENABLE_OCR", default="false").lower() in {"1", "true", "yes", "on"},
+        ocr_languages=_first_env("OCR_LANGS", default="eng"),
     )
 
 
 SETTINGS = _load_runtime_settings()
 
 POSTGRES_URL = SETTINGS.postgres_url
+REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
 EMBEDDING_MODEL = SETTINGS.embedding_model
+EMBEDDING_BATCH_SIZE = SETTINGS.embedding_batch_size
 OLLAMA_MODEL = SETTINGS.llm_model
 OLLAMA_BASE_URL = SETTINGS.ollama_url
+JWT_SECRET_KEY = SETTINGS.jwt_secret_key
+ACCESS_TOKEN_EXPIRE_MINUTES = SETTINGS.access_token_expire_minutes
+ENABLE_OCR = SETTINGS.enable_ocr
+OCR_LANGS = SETTINGS.ocr_languages
 
 # Singleton-like clients
 _embeddings = None
-_vectorstore = None
-_text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=900,
-    chunk_overlap=150,
-    separators=["\n\n", "\n", "।", ".", "?", "!", " ", ""],
-)
+_vectorstores = {}
 
 
 class EmbeddingInitializationError(RuntimeError):
@@ -155,6 +178,12 @@ RESOLVED_COLLECTION_NAME = _normalize_collection_name(
 )
 
 
+def user_collection_name(user_id: int) -> str:
+    return _normalize_collection_name(
+        f"{COLLECTION_NAME}__user_{user_id}__{EMBEDDING_MODEL}"
+    )
+
+
 def get_embeddings():
     global _embeddings
     if _embeddings is None:
@@ -172,26 +201,27 @@ def get_embeddings():
     return _embeddings
 
 
-def get_vectorstore() -> PGVector:
-    global _vectorstore
-    if _vectorstore is None:
+def get_vectorstore(collection_name: str | None = None) -> PGVector:
+    resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
+    vectorstore = _vectorstores.get(resolved_collection)
+    if vectorstore is None:
         _ensure_postgres_database_exists()
-        _vectorstore = PGVector(
+        vectorstore = PGVector(
             connection_string=POSTGRES_URL,
-            collection_name=RESOLVED_COLLECTION_NAME,
+            collection_name=resolved_collection,
             embedding_function=get_embeddings(),
             use_jsonb=True,
         )
-    return _vectorstore
+        _vectorstores[resolved_collection] = vectorstore
+    return vectorstore
 
 
-def reset_vectorstore() -> PGVector:
-    global _vectorstore
-
+def reset_vectorstore(collection_name: str | None = None) -> PGVector:
+    resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
     _ensure_postgres_database_exists()
-    store = _vectorstore or PGVector(
+    store = _vectorstores.get(resolved_collection) or PGVector(
         connection_string=POSTGRES_URL,
-        collection_name=RESOLVED_COLLECTION_NAME,
+        collection_name=resolved_collection,
         embedding_function=get_embeddings(),
         use_jsonb=True,
     )
@@ -201,8 +231,8 @@ def reset_vectorstore() -> PGVector:
     except Exception:
         pass
 
-    _vectorstore = None
-    return get_vectorstore()
+    _vectorstores.pop(resolved_collection, None)
+    return get_vectorstore(resolved_collection)
 
 
 def get_llm():
@@ -211,10 +241,6 @@ def get_llm():
         base_url=OLLAMA_BASE_URL,
         temperature=0.15,
     )
-
-
-def get_text_splitter():
-    return _text_splitter
 
 
 def get_runtime_settings() -> RuntimeSettings:

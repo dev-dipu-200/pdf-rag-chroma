@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-app-base: &app-base
   build:
     context: .
@@ -7,6 +5,8 @@ x-app-base: &app-base
       PYTHON_BASE_IMAGE: python:3.12-slim
   volumes:
     - uploads_data:/app/uploads
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   restart: unless-stopped
   logging:
     driver: json-file
@@ -26,7 +26,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d pdf_rag"]
@@ -38,7 +38,7 @@ services:
     image: redis:7
     container_name: updesh_redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     restart: unless-stopped
 
   api:
@@ -48,12 +48,9 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.docker
     environment:
-      APP_ENV: prod
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/pdf_rag
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DOTENV_FILE: .env.docker
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,13 +60,11 @@ services:
   worker:
     <<: *app-base
     container_name: updesh_worker
-    command: ["celery", "-A", "celery_worker", "worker", "--loglevel=info", "--concurrency=2"]
+    command: ["sh", "-c", "celery -A celery_worker worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-1}"]
     env_file:
-      - .env
+      - .env.docker
     environment:
-      DATABASE_URL: postgresql://dipu:dipu@postgres:5432/pdf_rag
-      REDIS_URL: redis://redis:6379/0
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DOTENV_FILE: .env.docker
     depends_on:
       postgres:
         condition: service_healthy

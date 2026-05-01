@@ -1,32 +1,72 @@
-# Ask questions endpoints
 import json
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from ollama import ResponseError
+from sqlalchemy.orm import Session
 
+from app.auth import get_current_user, get_user_chat_session
+from app.database import SessionLocal, get_db
 from app.dependencies import (
     EmbeddingInitializationError,
     get_llm,
     get_vectorstore,
+    user_collection_name,
 )
-from app.schemas import QueryRequest, QueryResponse
-from app.services.rag import build_answer_chain, build_rag_chain, format_docs
+from app.models import ChatMessage, ChatSession, PdfDocument, User
+from app.schemas import (
+    ChatMessageResponse,
+    ChatSessionResponse,
+    QueryRequest,
+    QueryResponse,
+)
+from app.services.rag import build_answer_chain, format_docs
 
 router = APIRouter(prefix="/query", tags=["query"])
 logger = logging.getLogger(__name__)
 
 
-def _get_retriever(top_k: int):
-    vectorstore = get_vectorstore()
-    return vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": top_k}
+def _serialize_session(session: ChatSession) -> ChatSessionResponse:
+    return ChatSessionResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
     )
 
 
-def _get_sources(retriever, question: str) -> tuple[list, list[str], str]:
-    docs = retriever.invoke(question)
+def _serialize_message(message: ChatMessage) -> ChatMessageResponse:
+    return ChatMessageResponse(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+        sources=message.sources or [],
+        created_at=message.created_at,
+    )
+
+
+def _ensure_indexed_documents(db: Session, user_id: int) -> None:
+    has_docs = (
+        db.query(PdfDocument.id)
+        .filter(PdfDocument.user_id == user_id, PdfDocument.status == "indexed")
+        .first()
+    )
+    if has_docs is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No indexed PDFs found for this user. Upload PDFs and wait for indexing to finish.",
+        )
+
+
+def _get_docs(user_id: int, question: str, top_k: int):
+    vectorstore = get_vectorstore(user_collection_name(user_id))
+    return vectorstore.similarity_search(question, k=top_k)
+
+
+def _get_sources_and_context(user_id: int, question: str, top_k: int) -> tuple[list, list[str], str]:
+    docs = _get_docs(user_id, question, top_k)
     sources = list({d.metadata.get("source", "unknown") for d in docs})
     context = format_docs(docs)
     return docs, sources, context
@@ -35,52 +75,146 @@ def _get_sources(retriever, question: str) -> tuple[list, list[str], str]:
 def _ndjson_line(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False) + "\n"
 
+
+def _make_title(question: str) -> str:
+    compact = " ".join(question.split())
+    return compact[:80] or "New chat"
+
+
+def _get_or_create_session(db: Session, user: User, requested_session_id: int | None, question: str) -> ChatSession:
+    if requested_session_id is not None:
+        return get_user_chat_session(db, user.id, requested_session_id)
+
+    chat_session = ChatSession(
+        user_id=user.id,
+        title=_make_title(question),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(chat_session)
+    db.commit()
+    db.refresh(chat_session)
+    return chat_session
+
+
+def _save_message(db: Session, user_id: int, session_id: int, role: str, content: str, sources: list[str] | None = None) -> None:
+    message = ChatMessage(
+        session_id=session_id,
+        user_id=user_id,
+        role=role,
+        content=content,
+        sources=sources or [],
+    )
+    db.add(message)
+    session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+    if session is not None:
+        session.updated_at = datetime.utcnow()
+    db.commit()
+
+
+@router.get("/sessions", response_model=list[ChatSessionResponse])
+def list_chat_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == current_user.id)
+        .order_by(ChatSession.updated_at.desc())
+        .all()
+    )
+    return [_serialize_session(session) for session in sessions]
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
+def get_chat_messages(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    chat_session = get_user_chat_session(db, current_user.id, session_id)
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == chat_session.id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+    return [_serialize_message(message) for message in messages]
+
+
 @router.post("", response_model=QueryResponse)
 def ask_question(
     req: QueryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    _ensure_indexed_documents(db, current_user.id)
+    session = _get_or_create_session(db, current_user, req.session_id, req.question)
+    _save_message(db, current_user.id, session.id, "user", req.question)
+
     try:
-        retriever = _get_retriever(req.top_k)
-    except EmbeddingInitializationError as exc:
+        _, sources, context = _get_sources_and_context(current_user.id, req.question, req.top_k or 5)
+        if not context.strip():
+            raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
+    except (EmbeddingInitializationError, ResponseError) as exc:
         raise HTTPException(
             status_code=503,
             detail=(
                 "Embeddings are unavailable, so retrieval cannot run. "
-                "Pull the configured embedding model in Ollama and verify OLLAMA_URL."
+                "Pull the configured embedding model in Ollama, reduce embedding batch size if needed, "
+                "and verify OLLAMA_URL."
             ),
         ) from exc
 
     try:
-        chain = build_rag_chain(get_llm(), retriever)
-        answer = chain.invoke(req.question)
+        chain = build_answer_chain(get_llm())
+        answer = chain.invoke({"context": context, "question": req.question})
     except Exception as exc:
         logger.warning("Ollama query failed: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail=f"Ollama query failed: {exc}",
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"Ollama query failed: {exc}") from exc
 
-    _, sources, _ = _get_sources(retriever, req.question)
-
-    return QueryResponse(answer=answer, sources=sources, provider="ollama")
+    _save_message(db, current_user.id, session.id, "assistant", answer, sources)
+    return QueryResponse(
+        answer=answer,
+        sources=sources,
+        provider="ollama",
+        session_id=session.id,
+    )
 
 
 @router.post("/stream")
-def stream_answer(req: QueryRequest):
+def stream_answer(
+    req: QueryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_indexed_documents(db, current_user.id)
+    session = _get_or_create_session(db, current_user, req.session_id, req.question)
+    _save_message(db, current_user.id, session.id, "user", req.question)
+
     try:
-        retriever = _get_retriever(req.top_k)
-        _, sources, context = _get_sources(retriever, req.question)
-    except EmbeddingInitializationError as exc:
+        _, sources, context = _get_sources_and_context(current_user.id, req.question, req.top_k or 5)
+        if not context.strip():
+            raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
+    except (EmbeddingInitializationError, ResponseError) as exc:
         raise HTTPException(
             status_code=503,
             detail=(
                 "Embeddings are unavailable, so retrieval cannot run. "
-                "Pull the configured embedding model in Ollama and verify OLLAMA_URL."
+                "Pull the configured embedding model in Ollama, reduce embedding batch size if needed, "
+                "and verify OLLAMA_URL."
             ),
         ) from exc
 
     def event_stream():
-        yield _ndjson_line({"type": "meta", "sources": sources})
+        answer_parts: list[str] = []
+        yield _ndjson_line(
+            {
+                "type": "meta",
+                "sources": sources,
+                "provider": "ollama",
+                "session_id": session.id,
+            }
+        )
         try:
             chain = build_answer_chain(get_llm())
             payload = {"context": context, "question": req.question}
@@ -90,21 +224,30 @@ def stream_answer(req: QueryRequest):
                 if not answer_started:
                     yield _ndjson_line({"type": "start", "provider": "ollama"})
                     answer_started = True
+                answer_parts.append(chunk)
                 yield _ndjson_line({"type": "token", "content": chunk})
 
             if not answer_started:
                 yield _ndjson_line({"type": "start", "provider": "ollama"})
+
+            answer = "".join(answer_parts).strip()
+            history_db = SessionLocal()
+            try:
+                _save_message(history_db, current_user.id, session.id, "assistant", answer, sources)
+            finally:
+                history_db.close()
+
             yield _ndjson_line(
-                {"type": "done", "provider": "ollama", "sources": sources}
+                {
+                    "type": "done",
+                    "provider": "ollama",
+                    "sources": sources,
+                    "session_id": session.id,
+                }
             )
         except Exception as exc:
             logger.warning("Streaming Ollama query failed: %s", exc)
-            yield _ndjson_line(
-                {
-                    "type": "error",
-                    "detail": f"Ollama query failed: {exc}",
-                }
-            )
+            yield _ndjson_line({"type": "error", "detail": f"Ollama query failed: {exc}"})
 
     return StreamingResponse(
         event_stream(),

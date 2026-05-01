@@ -3,6 +3,3 @@ uploads/
 .env
 venv/
 __pycache__/
-
-main.py
-main.js

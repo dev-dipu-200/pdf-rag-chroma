@@ -4,11 +4,12 @@ uvicorn[standard]
 python-multipart
 pydantic
 python-dotenv
-langchain
+PyJWT
+celery[redis]
 langchain-community
-langchain-text-splitters
 langchain-ollama
+pypdf
+pdfplumber
 pgvector
 psycopg2-binary
 SQLAlchemy
-pymupdf
