@@ -26,14 +26,16 @@ def register(payload: AuthRequest, db: Session = Depends(get_db)):
     if existing is not None:
         raise HTTPException(status_code=409, detail="Username already exists.")
 
-    user = User(username=username, password_hash=hash_password(payload.password))
+    has_any_user = db.query(User.id).first() is not None
+    role = "user" if has_any_user else "admin"
+    user = User(username=username, password_hash=hash_password(payload.password), role=role)
     db.add(user)
     db.commit()
     db.refresh(user)
 
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, created_at=user.created_at),
+        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
     )
 
 
@@ -46,7 +48,7 @@ def login(payload: AuthRequest, db: Session = Depends(get_db)):
 
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, created_at=user.created_at),
+        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
     )
 
 
@@ -61,5 +63,6 @@ def me(current_user: User = Depends(get_current_user)):
     return UserResponse(
         id=current_user.id,
         username=current_user.username,
+        role=current_user.role,
         created_at=current_user.created_at,
     )

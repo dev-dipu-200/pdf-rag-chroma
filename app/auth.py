@@ -47,6 +47,7 @@ def create_access_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "username": user.username,
+        "role": user.role,
         "exp": expire,
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=ALGORITHM)
@@ -113,3 +114,12 @@ def get_user_chat_session(db: Session, user_id: int, session_id: int) -> ChatSes
     if chat_session is None:
         raise HTTPException(status_code=404, detail="Chat session not found.")
     return chat_session
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required.",
+        )
+    return current_user

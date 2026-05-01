@@ -11,11 +11,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         curl \
-        ocrmypdf \
+        libgl1 \
+        libglib2.0-0 \
         tesseract-ocr \
         tesseract-ocr-eng \
-        qpdf \
-        ghostscript \
+        tesseract-ocr-hin \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -23,6 +23,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY docker ./docker
+COPY templates ./templates
 COPY main.py ./main.py
 COPY celery_worker.py ./celery_worker.py
 COPY .env.docker ./.env.docker

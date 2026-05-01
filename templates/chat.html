@@ -5,20 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local PDF Chatbot</title>
     <style>
+        @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+
         :root {
-            --bg: #efe7da;
-            --panel: rgba(255, 250, 242, 0.9);
-            --panel-strong: #fffdfa;
-            --line: rgba(52, 42, 32, 0.12);
-            --text: #221b16;
-            --muted: #6d6258;
-            --accent: #a2482f;
-            --accent-dark: #7d2f1b;
-            --assistant: #fffdf8;
-            --user: #2c5f4d;
-            --danger: #a11d33;
-            --warn: #8a5a00;
-            --ok: #166534;
+            --bg: #f3efe7;
+            --canvas: #fbf8f2;
+            --panel: rgba(255, 255, 255, 0.74);
+            --panel-strong: rgba(255, 255, 255, 0.94);
+            --panel-soft: rgba(20, 38, 34, 0.045);
+            --line: rgba(42, 54, 45, 0.1);
+            --line-strong: rgba(42, 54, 45, 0.18);
+            --text: #18201c;
+            --muted: #6d736d;
+            --accent: #d26c41;
+            --accent-dark: #b85a33;
+            --accent-soft: rgba(210, 108, 65, 0.12);
+            --sage: #2f5e53;
+            --sage-soft: rgba(47, 94, 83, 0.08);
+            --assistant: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.98));
+            --user: linear-gradient(135deg, #23483f, #36695c);
+            --danger: #c94761;
+            --warn: #9f6f20;
+            --ok: #1f7a44;
+            --shadow-lg: 0 32px 70px rgba(88, 68, 42, 0.09);
+            --shadow-md: 0 18px 40px rgba(88, 68, 42, 0.08);
         }
 
         * {
@@ -29,52 +39,71 @@
             margin: 0;
             min-height: 100vh;
             background:
-                radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 28%),
-                linear-gradient(140deg, #f7f0e4, #e4dfd5 55%, #d7e1df);
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 22%),
+                radial-gradient(circle at 85% 15%, rgba(210, 108, 65, 0.12), transparent 18%),
+                radial-gradient(circle at bottom right, rgba(47, 94, 83, 0.09), transparent 20%),
+                linear-gradient(135deg, #f5f0e7, #eee5d7 48%, #e9efe6);
             color: var(--text);
-            font-family: Georgia, "Times New Roman", serif;
+            font-family: "Manrope", "Segoe UI", sans-serif;
         }
 
         .shell {
             display: grid;
-            grid-template-columns: 340px 1fr;
+            grid-template-columns: 360px 1fr;
             min-height: 100vh;
+            position: relative;
+            gap: 18px;
+            padding: 18px;
+        }
+
+        .shell::before {
+            content: "";
+            position: fixed;
+            inset: 18px;
+            border: 1px solid rgba(80, 68, 44, 0.06);
+            border-radius: 36px;
+            pointer-events: none;
         }
 
         .sidebar,
         .main {
-            padding: 20px;
+            padding: 0;
         }
 
         .sidebar {
-            border-right: 1px solid var(--line);
-            background: rgba(255, 248, 238, 0.72);
-            backdrop-filter: blur(10px);
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 16px;
+            position: relative;
         }
 
         .main {
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 16px;
         }
 
         .panel {
             background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 22px;
-            box-shadow: 0 20px 50px rgba(43, 30, 19, 0.08);
+            border-radius: 28px;
+            box-shadow:
+                var(--shadow-lg),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5);
             overflow: hidden;
+            backdrop-filter: blur(22px);
+        }
+
+        .panel:hover {
+            border-color: rgba(201, 109, 68, 0.22);
         }
 
         .panel-header {
-            padding: 18px 20px 10px;
+            padding: 20px 22px 12px;
         }
 
         .panel-body {
-            padding: 0 20px 20px;
+            padding: 0 22px 22px;
         }
 
         h1, h2, h3, p {
@@ -82,28 +111,31 @@
         }
 
         h1 {
-            font-size: 2rem;
-            letter-spacing: 0.02em;
+            font-size: 2.7rem;
+            line-height: 0.96;
+            font-weight: 800;
+            letter-spacing: -0.05em;
         }
 
         h2 {
-            font-size: 1rem;
+            font-size: 0.82rem;
             margin-bottom: 10px;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.16em;
             color: var(--muted);
         }
 
         p.subtle {
             margin-top: 6px;
             color: var(--muted);
-            line-height: 1.5;
+            line-height: 1.7;
+            font-size: 0.98rem;
         }
 
         .auth-grid,
         .upload-grid {
             display: grid;
-            gap: 10px;
+            gap: 12px;
         }
 
         input,
@@ -111,64 +143,94 @@
         button,
         select {
             width: 100%;
-            border-radius: 14px;
+            border-radius: 18px;
             border: 1px solid var(--line);
-            padding: 12px 14px;
+            padding: 15px 16px;
             font: inherit;
             color: var(--text);
-            background: rgba(255, 255, 255, 0.92);
+            background: rgba(255, 255, 255, 0.82);
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+            color: rgba(31, 36, 31, 0.4);
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: rgba(201, 109, 68, 0.5);
+            box-shadow: 0 0 0 4px rgba(201, 109, 68, 0.12);
         }
 
         textarea {
-            min-height: 86px;
+            min-height: 120px;
             resize: vertical;
         }
 
         button {
             cursor: pointer;
-            background: var(--accent);
+            background: linear-gradient(135deg, var(--accent), #d9895b);
             color: #fff;
             border: none;
-            transition: background 0.2s ease, transform 0.2s ease;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+            box-shadow: 0 12px 26px rgba(201, 109, 68, 0.24);
         }
 
         button:hover {
-            background: var(--accent-dark);
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 18px 34px rgba(201, 109, 68, 0.26);
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
         button.secondary {
-            background: #ece1d0;
+            background: rgba(47, 94, 83, 0.1);
             color: var(--text);
-        }
-
-        button.secondary:hover {
-            background: #e2d4bf;
+            box-shadow: none;
         }
 
         button.ghost {
-            background: transparent;
-            color: var(--muted);
-            border: 1px dashed var(--line);
+            background: rgba(255, 255, 255, 0.52);
+            color: #415049;
+            border: 1px solid rgba(42, 54, 45, 0.12);
+            box-shadow: none;
+        }
+
+        button.danger {
+            background: linear-gradient(135deg, var(--danger), #d96276);
+            color: #fff;
         }
 
         .stack {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
 
         .inline {
             display: flex;
-            gap: 10px;
+            gap: 12px;
         }
 
         .inline > * {
             flex: 1;
         }
 
+        .inline.wrap {
+            flex-wrap: wrap;
+        }
+
         .status {
-            font-size: 0.92rem;
+            font-size: 0.88rem;
             color: var(--muted);
             min-height: 22px;
         }
@@ -185,98 +247,291 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 9px 12px;
+            padding: 12px 15px;
             border-radius: 999px;
-            background: #f0e2d4;
-            color: #6d371f;
-            font-size: 0.92rem;
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--text);
+            font-size: 0.9rem;
+            border: 1px solid var(--line);
         }
 
         .list {
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            max-height: 250px;
+            gap: 12px;
+            max-height: 320px;
             overflow: auto;
+            padding-right: 4px;
         }
 
         .item {
             border: 1px solid var(--line);
-            background: var(--panel-strong);
-            border-radius: 16px;
-            padding: 12px 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(251,247,241,0.94));
+            border-radius: 22px;
+            padding: 16px 16px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 24px rgba(91, 69, 40, 0.05);
         }
 
-        .item button {
+        .item::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: linear-gradient(180deg, rgba(49, 94, 83, 0.88), rgba(201, 109, 68, 0.88));
+            opacity: 0.8;
+        }
+
+        .item-title {
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.4;
+            padding-left: 10px;
+        }
+
+        .item-grid {
+            display: grid;
+            gap: 10px;
+        }
+
+        .item-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            padding-left: 10px;
+        }
+
+        .meta-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(49, 94, 83, 0.06);
+            border: 1px solid rgba(49, 94, 83, 0.08);
+            color: var(--muted);
+            font-size: 0.75rem;
+            letter-spacing: 0.04em;
+        }
+
+        .item-copy {
+            padding-left: 10px;
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
             margin-top: 10px;
+        }
+
+        .item-actions button {
+            margin-top: 0;
+            flex: 1;
+            min-width: 100px;
+        }
+
+        .role-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: #9e4f2e;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
         }
 
         .badge {
             display: inline-block;
             margin-top: 8px;
-            padding: 4px 8px;
+            padding: 5px 10px;
             border-radius: 999px;
-            font-size: 0.78rem;
-            background: #efe1cf;
-            color: #70431f;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: rgba(49, 94, 83, 0.08);
+            color: var(--text);
         }
 
         .badge.indexed {
-            background: #dff4e7;
-            color: #166534;
+            background: rgba(31, 122, 68, 0.13);
+            color: #1f7a44;
         }
 
         .badge.failed {
-            background: #f7d9df;
-            color: #a11d33;
+            background: rgba(197, 63, 86, 0.12);
+            color: #b43c52;
         }
 
         .badge.indexing,
         .badge.pending {
-            background: #f8ecd2;
+            background: rgba(157, 107, 29, 0.12);
             color: var(--warn);
         }
 
         .chat-panel {
             display: grid;
             grid-template-rows: auto 1fr auto;
-            min-height: calc(100vh - 40px);
+            min-height: calc(100vh - 36px);
+            background:
+                radial-gradient(circle at top right, rgba(210, 108, 65, 0.08), transparent 22%),
+                linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(248, 244, 238, 0.98));
+            position: relative;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .chat-panel::after {
+            content: "";
+            position: absolute;
+            right: 28px;
+            top: 26px;
+            width: 140px;
+            height: 140px;
+            background: radial-gradient(circle, rgba(49, 94, 83, 0.1), transparent 68%);
+            pointer-events: none;
         }
 
         .chat-header {
-            padding: 22px 24px 12px;
+            padding: 32px 34px 22px;
             border-bottom: 1px solid var(--line);
-        }
-
-        .chat-body {
-            padding: 20px 24px;
-            overflow: auto;
             display: flex;
-            flex-direction: column;
+            align-items: flex-end;
+            justify-content: space-between;
             gap: 16px;
         }
 
-        .message {
-            max-width: 78%;
-            padding: 14px 16px;
+        .chat-header-copy {
+            max-width: 720px;
+        }
+
+        .headline-title {
+            font-size: clamp(2.2rem, 2.9vw, 3.4rem);
+            line-height: 0.98;
+            letter-spacing: -0.05em;
+            font-weight: 800;
+            margin: 0 0 8px;
+            max-width: 11ch;
+        }
+
+        .headline-sub {
+            max-width: 64ch;
+        }
+
+        .hero-stack {
+            display: grid;
+            gap: 12px;
+        }
+
+        .hero-metrics {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .metric-card {
+            min-width: 130px;
+            padding: 13px 15px;
             border-radius: 18px;
+            border: 1px solid var(--line);
+            background: rgba(255,255,255,0.72);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 22px rgba(91, 69, 40, 0.05);
+        }
+
+        .metric-value {
+            display: block;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .metric-label {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .hero-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(255,255,255,0.78);
+            color: var(--muted);
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .chat-body {
+            padding: 30px 34px;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-body::-webkit-scrollbar,
+        .list::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .chat-body::-webkit-scrollbar-thumb,
+        .list::-webkit-scrollbar-thumb {
+            background: rgba(49, 94, 83, 0.18);
+            border-radius: 999px;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 18px 20px;
+            border-radius: 24px;
             line-height: 1.6;
             white-space: pre-wrap;
-            box-shadow: 0 10px 30px rgba(43, 30, 19, 0.05);
+            box-shadow: var(--shadow-md);
+            animation: rise 0.24s ease;
         }
 
         .message.user {
             align-self: flex-end;
             background: var(--user);
-            color: #fff;
-            border-bottom-right-radius: 6px;
+            color: #fff8f3;
+            border-bottom-right-radius: 8px;
         }
 
         .message.assistant {
             align-self: flex-start;
             background: var(--assistant);
-            border: 1px solid rgba(44, 95, 77, 0.12);
-            border-bottom-left-radius: 6px;
+            border: 1px solid var(--line);
+            border-bottom-left-radius: 8px;
+        }
+
+        .message.assistant::before,
+        .message.user::before {
+            display: block;
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            opacity: 0.78;
+        }
+
+        .message.assistant::before {
+            content: "Assistant";
+            color: #6e7f73;
+        }
+
+        .message.user::before {
+            content: "You";
+            color: rgba(255, 248, 243, 0.86);
         }
 
         .meta {
@@ -287,24 +542,110 @@
 
         .composer {
             border-top: 1px solid var(--line);
-            padding: 16px 20px 20px;
-            background: rgba(255, 251, 245, 0.92);
+            padding: 22px 28px 28px;
+            background: rgba(255, 249, 242, 0.84);
             display: grid;
             gap: 12px;
+        }
+
+        .composer-note {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            color: var(--muted);
+            font-size: 0.84rem;
         }
 
         .composer-grid {
             display: grid;
-            grid-template-columns: 1fr 110px 130px;
+            grid-template-columns: 1fr 120px 160px;
             gap: 12px;
+            align-items: end;
         }
 
         .empty-state {
-            padding: 18px;
-            border: 1px dashed var(--line);
-            border-radius: 16px;
+            padding: 24px;
+            border: 1px dashed var(--line-strong);
+            border-radius: 24px;
             color: var(--muted);
-            background: rgba(255,255,255,0.46);
+            background: linear-gradient(180deg, rgba(255,255,255,0.84), rgba(249,245,239,0.9));
+        }
+
+        .brand-block {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .brand-block::after {
+            content: "";
+            position: absolute;
+            width: 180px;
+            height: 180px;
+            right: -40px;
+            top: -60px;
+            background: radial-gradient(circle, rgba(201, 109, 68, 0.18), transparent 72%);
+            pointer-events: none;
+        }
+
+        .brand-mark {
+            width: 54px;
+            height: 54px;
+            border-radius: 20px;
+            display: grid;
+            place-items: center;
+            font-size: 1.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, rgba(201, 109, 68, 0.18), rgba(49, 94, 83, 0.18));
+            border: 1px solid rgba(49, 94, 83, 0.1);
+            margin-bottom: 16px;
+        }
+
+        .sidebar-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .summary-tile {
+            padding: 14px 14px 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--line);
+            box-shadow: 0 10px 24px rgba(91, 69, 40, 0.05);
+        }
+
+        .summary-value {
+            display: block;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .summary-label {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.74rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .section-note {
+            color: var(--muted);
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         @media (max-width: 980px) {
@@ -315,6 +656,11 @@
             .sidebar {
                 border-right: none;
                 border-bottom: 1px solid var(--line);
+            }
+
+            .shell::before {
+                inset: 10px;
+                border-radius: 24px;
             }
 
             .chat-panel {
@@ -328,18 +674,33 @@
             .message {
                 max-width: 92%;
             }
+
+            .chat-header {
+                display: grid;
+            }
         }
     </style>
 </head>
 <body>
     <div class="shell">
         <aside class="sidebar">
-            <div class="panel">
+            <div class="panel brand-block">
                 <div class="panel-header">
+                    <div class="brand-mark">AD</div>
                     <h1>Archive Desk</h1>
-                    <p class="subtle">Local Ollama chatbot for multiple PDFs, background ingestion, and private user history.</p>
+                    <p class="subtle">A modern retrieval workspace for PDF knowledge, OCR fallback, shared embeddings, and private conversations.</p>
                 </div>
                 <div class="panel-body stack">
+                    <div class="sidebar-summary">
+                        <div class="summary-tile">
+                            <span class="summary-value">Shared</span>
+                            <span class="summary-label">Knowledge Base</span>
+                        </div>
+                        <div class="summary-tile">
+                            <span class="summary-value">Private</span>
+                            <span class="summary-label">Chat Sessions</span>
+                        </div>
+                    </div>
                     <div id="userState" class="stack">
                         <div class="user-pill">Not logged in</div>
                     </div>
@@ -348,10 +709,13 @@
             </div>
 
             <div class="panel" id="authPanel">
-                <div class="panel-header"><h2>Login</h2></div>
+                <div class="panel-header">
+                    <h2>Access</h2>
+                    <p class="section-note">Sign in to ask questions from the shared knowledge base or manage uploads as admin.</p>
+                </div>
                 <div class="panel-body stack">
                     <div class="auth-grid">
-                        <input id="usernameInput" type="text" placeholder="Username">
+                        <input id="usernameInput" type="text" placeholder="Username or email">
                         <input id="passwordInput" type="password" placeholder="Password">
                     </div>
                     <div class="inline">
@@ -362,7 +726,10 @@
             </div>
 
             <div class="panel" id="uploadPanel" style="display:none;">
-                <div class="panel-header"><h2>PDF Upload</h2></div>
+                <div class="panel-header">
+                    <h2>Admin Uploads</h2>
+                    <p class="section-note">Add PDFs to the shared vector knowledge base for all users.</p>
+                </div>
                 <div class="panel-body stack">
                     <div class="upload-grid">
                         <input id="pdfInput" type="file" accept="application/pdf">
@@ -376,16 +743,25 @@
             </div>
 
             <div class="panel" id="documentsPanel" style="display:none;">
-                <div class="panel-header"><h2>Your PDFs</h2></div>
+                <div class="panel-header">
+                    <h2>Knowledge Base</h2>
+                    <p class="section-note">Track indexing status and chunk coverage for shared documents.</p>
+                </div>
                 <div class="panel-body">
                     <div id="documentsList" class="list"></div>
                 </div>
             </div>
 
             <div class="panel" id="sessionsPanel" style="display:none;">
-                <div class="panel-header"><h2>Your History</h2></div>
+                <div class="panel-header">
+                    <h2>Your History</h2>
+                    <p class="section-note">Sessions are private per user, even though retrieval uses the shared PDF store.</p>
+                </div>
                 <div class="panel-body stack">
-                    <button id="newChatButton" class="ghost">Start New Chat</button>
+                    <div class="inline wrap">
+                        <button id="newChatButton" class="ghost">Start New Chat</button>
+                        <button id="deleteAllChatsButton" class="danger">Delete All Chats</button>
+                    </div>
                     <div id="sessionsList" class="list"></div>
                 </div>
             </div>
@@ -394,8 +770,26 @@
         <main class="main">
             <section class="panel chat-panel">
                 <div class="chat-header">
-                    <h2>Chat</h2>
-                    <p class="subtle" id="chatHeadline">Login first, then upload PDFs and ask questions from your own document set.</p>
+                    <div class="chat-header-copy hero-stack">
+                        <h2>Conversational Search</h2>
+                        <h3 class="headline-title">Ask the archive like it is already indexed in your head.</h3>
+                        <p class="subtle headline-sub" id="chatHeadline">Login first, then ask questions from the shared PDF knowledge base.</p>
+                        <div class="hero-metrics">
+                            <div class="metric-card">
+                                <span class="metric-value">Shared</span>
+                                <span class="metric-label">Vector Store</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-value">OCR</span>
+                                <span class="metric-label">Page Fallback</span>
+                            </div>
+                            <div class="metric-card">
+                                <span class="metric-value">Private</span>
+                                <span class="metric-label">Chat History</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hero-chip">Ollama + pgvector + OCR fallback</div>
                 </div>
 
                 <div id="chatBody" class="chat-body">
@@ -404,9 +798,13 @@
 
                 <form id="chatForm" class="composer">
                     <div class="composer-grid">
-                        <textarea id="questionInput" placeholder="Ask a question from your PDFs..." disabled></textarea>
+                        <textarea id="questionInput" placeholder="Ask a question from the PDF knowledge base..." disabled></textarea>
                         <input id="topKInput" type="number" min="1" max="15" value="5" disabled>
                         <button id="sendButton" type="submit" disabled>Ask</button>
+                    </div>
+                    <div class="composer-note">
+                        <span>Ask for summaries, facts, extracted figures, or Hindi and English context from uploaded PDFs.</span>
+                        <span>Top K retrieval</span>
                     </div>
                     <div class="status" id="chatStatus"></div>
                 </form>
@@ -437,6 +835,11 @@
         const questionInput = document.getElementById("questionInput");
         const topKInput = document.getElementById("topKInput");
         const sendButton = document.getElementById("sendButton");
+        const deleteAllChatsButton = document.getElementById("deleteAllChatsButton");
+
+        function isAdmin() {
+            return state.user?.role === "admin";
+        }
 
         async function api(path, options = {}) {
             const headers = {
@@ -488,17 +891,19 @@
         function renderAuthState() {
             if (state.user) {
                 userState.innerHTML = `
-                    <div class="user-pill">Logged in as <strong>${state.user.username}</strong></div>
+                    <div class="user-pill">Logged in as <strong>${state.user.username}</strong><span class="role-tag">${state.user.role}</span></div>
                     <button id="logoutButton" class="secondary">Logout</button>
                 `;
                 authPanel.style.display = "none";
-                uploadPanel.style.display = "";
-                documentsPanel.style.display = "";
+                uploadPanel.style.display = isAdmin() ? "" : "none";
+                documentsPanel.style.display = isAdmin() ? "" : "none";
                 sessionsPanel.style.display = "";
                 questionInput.disabled = false;
                 topKInput.disabled = false;
                 sendButton.disabled = false;
-                chatHeadline.textContent = "Ask questions from your indexed PDFs. Only your own chat history is shown here.";
+                chatHeadline.textContent = isAdmin()
+                    ? "Upload PDFs, build the shared vector knowledge base, and chat with private history."
+                    : "Ask questions from the admin-managed knowledge base. Only your own chat history is shown here.";
                 document.getElementById("logoutButton").addEventListener("click", logout);
             } else {
                 userState.innerHTML = `<div class="user-pill">Not logged in</div>`;
@@ -510,7 +915,7 @@
                 topKInput.disabled = true;
                 sendButton.disabled = true;
                 state.activeSessionId = null;
-                chatHeadline.textContent = "Login first, then upload PDFs and ask questions from your own document set.";
+                chatHeadline.textContent = "Login first, then ask questions from the shared PDF knowledge base.";
                 chatBody.innerHTML = `<div class="empty-state">No active conversation yet.</div>`;
             }
         }
@@ -523,10 +928,14 @@
 
             documentsList.innerHTML = documents.map((doc) => `
                 <div class="item">
-                    <strong>${doc.original_filename}</strong>
-                    <div class="badge ${doc.status}">${doc.status}</div>
-                    <div class="meta">Chunks: ${doc.chunks_added}</div>
-                    ${doc.error_message ? `<div class="meta" style="color: var(--danger);">${doc.error_message}</div>` : ""}
+                    <div class="item-grid">
+                        <div class="item-title">${doc.original_filename}</div>
+                        <div class="item-meta-row">
+                            <div class="badge ${doc.status}">${doc.status}</div>
+                            <div class="meta-pill">Chunks ${doc.chunks_added}</div>
+                        </div>
+                        ${doc.error_message ? `<div class="meta item-copy" style="color: var(--danger);">${doc.error_message}</div>` : ""}
+                    </div>
                 </div>
             `).join("");
         }
@@ -539,14 +948,25 @@
 
             sessionsList.innerHTML = sessions.map((session) => `
                 <div class="item">
-                    <strong>${session.title}</strong>
-                    <div class="meta">${new Date(session.updated_at).toLocaleString()}</div>
-                    <button class="secondary" data-session-id="${session.id}">Open</button>
+                    <div class="item-grid">
+                        <div class="item-title">${session.title}</div>
+                        <div class="item-meta-row">
+                            <div class="meta-pill">Session #${session.id}</div>
+                            <div class="meta-pill">${new Date(session.updated_at).toLocaleString()}</div>
+                        </div>
+                        <div class="item-actions">
+                            <button class="secondary" data-open-session-id="${session.id}">Open</button>
+                            <button class="danger" data-delete-session-id="${session.id}">Delete</button>
+                        </div>
+                    </div>
                 </div>
             `).join("");
 
-            sessionsList.querySelectorAll("button[data-session-id]").forEach((button) => {
-                button.addEventListener("click", () => loadMessages(Number(button.dataset.sessionId)));
+            sessionsList.querySelectorAll("button[data-open-session-id]").forEach((button) => {
+                button.addEventListener("click", () => loadMessages(Number(button.dataset.openSessionId)));
+            });
+            sessionsList.querySelectorAll("button[data-delete-session-id]").forEach((button) => {
+                button.addEventListener("click", () => deleteSession(Number(button.dataset.deleteSessionId)));
             });
         }
 
@@ -580,6 +1000,10 @@
 
         async function refreshDocuments() {
             if (!state.user) return;
+            if (!isAdmin()) {
+                documentsList.innerHTML = "";
+                return;
+            }
             const documents = await api("/ingest/documents");
             renderDocuments(documents);
         }
@@ -633,6 +1057,7 @@
                 renderAuthState();
                 await refreshDocuments();
                 await refreshSessions();
+                chatBody.innerHTML = `<div class="empty-state">Start a new chat or ask your first question.</div>`;
             } catch (error) {
                 setStatus(authStatus, error.message, "error");
             }
@@ -649,6 +1074,8 @@
                 renderAuthState();
                 sessionsList.innerHTML = "";
                 documentsList.innerHTML = "";
+                setStatus(uploadStatus, "");
+                setStatus(chatStatus, "");
             }
         }
 
@@ -693,13 +1120,61 @@
             }
         }
 
+        async function createNewChat() {
+            if (!state.user) {
+                setStatus(chatStatus, "Login required.", "error");
+                return;
+            }
+
+            try {
+                const session = await api("/query/sessions", { method: "POST" });
+                state.activeSessionId = session.id;
+                chatBody.innerHTML = `<div class="empty-state">New chat started. Ask your first question.</div>`;
+                setStatus(chatStatus, `New chat #${session.id} ready.`, "ok");
+                await refreshSessions();
+            } catch (error) {
+                setStatus(chatStatus, error.message, "error");
+            }
+        }
+
+        async function deleteSession(sessionId) {
+            try {
+                await api(`/query/sessions/${sessionId}`, { method: "DELETE" });
+                if (state.activeSessionId === sessionId) {
+                    state.activeSessionId = null;
+                    chatBody.innerHTML = `<div class="empty-state">Chat deleted. Start a new chat.</div>`;
+                }
+                setStatus(chatStatus, `Deleted chat #${sessionId}.`, "ok");
+                await refreshSessions();
+            } catch (error) {
+                setStatus(chatStatus, error.message, "error");
+            }
+        }
+
+        async function deleteAllChats() {
+            if (!state.user) {
+                setStatus(chatStatus, "Login required.", "error");
+                return;
+            }
+
+            try {
+                await api("/query/sessions", { method: "DELETE" });
+                state.activeSessionId = null;
+                chatBody.innerHTML = `<div class="empty-state">All chat history deleted. Start a new chat.</div>`;
+                setStatus(chatStatus, "Deleted all chat history.", "ok");
+                await refreshSessions();
+            } catch (error) {
+                setStatus(chatStatus, error.message, "error");
+            }
+        }
+
         function startPolling() {
             if (state.pollingId) {
                 clearInterval(state.pollingId);
             }
 
             state.pollingId = setInterval(async () => {
-                if (!state.user) return;
+                if (!state.user || !isAdmin()) return;
                 const documents = await api("/ingest/documents");
                 renderDocuments(documents);
                 const active = documents.some((doc) => doc.status === "pending" || doc.status === "indexing");
@@ -786,11 +1261,8 @@
         document.getElementById("registerButton").addEventListener("click", () => loginOrRegister("/auth/register"));
         document.getElementById("uploadButton").addEventListener("click", uploadPdfs);
         document.getElementById("reindexButton").addEventListener("click", reindexAll);
-        document.getElementById("newChatButton").addEventListener("click", () => {
-            state.activeSessionId = null;
-            chatBody.innerHTML = `<div class="empty-state">New chat started. Ask your first question.</div>`;
-            setStatus(chatStatus, "New chat ready.");
-        });
+        document.getElementById("newChatButton").addEventListener("click", createNewChat);
+        deleteAllChatsButton.addEventListener("click", deleteAllChats);
 
         document.getElementById("chatForm").addEventListener("submit", async (event) => {
             event.preventDefault();

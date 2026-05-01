@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import PdfDocument, User
 from app.schemas import IngestResponse, PdfDocumentResponse, ReindexResponse
@@ -61,7 +61,7 @@ async def upload_pdf(
             media_type="application/pdf",
         ),
     ],
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     upload_dir = _user_upload_dir(current_user.id)
@@ -109,7 +109,7 @@ async def upload_pdf(
 
 @router.get("/documents", response_model=list[PdfDocumentResponse])
 def list_documents(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     documents = (
@@ -123,7 +123,7 @@ def list_documents(
 
 @router.post("/reindex", response_model=ReindexResponse)
 def reindex_uploaded_pdfs(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     documents = (

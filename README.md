@@ -6,10 +6,10 @@ FastAPI app for a local multi-user PDF chatbot:
 - local Ollama embeddings for pgvector with `nomic-embed-text`
 - `pypdf` for text extraction
 - `pdfplumber` for table extraction
-- PostgreSQL + pgvector for vector storage
+- PostgreSQL + pgvector with `langchain-postgres` for vector storage
 - Celery + Redis for background PDF ingestion
 - OAuth2-style bearer token auth for API access
-- optional OCR fallback with OCRmyPDF + Tesseract for scanned PDFs
+- optional OCR fallback with Tesseract for scanned PDFs
 - per-user login, private document space, and private chat history
 
 ## Architecture
@@ -49,17 +49,18 @@ ENV=dev
 PYTHON_BASE_IMAGE=python:3.12-slim
 APP_PORT=8000
 OLLAMA_PORT=11434
-POSTGRES_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/pdf_rag
+POSTGRES_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag
 REDIS_URL=redis://127.0.0.1:6379/0
 COLLECTION_NAME=pdf_docs_dev
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
+EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.2:3b
 OLLAMA_URL=http://localhost:11434
 ENABLE_OCR=false
-OCR_LANGS=eng
+OCR_LANGS=eng+hin
 ```
 
 Example `.env.prod`:
@@ -70,17 +71,18 @@ ENV=prod
 PYTHON_BASE_IMAGE=python:3.12-slim
 APP_PORT=8000
 OLLAMA_PORT=11434
-POSTGRES_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/pdf_rag
+POSTGRES_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag
 REDIS_URL=redis://redis:6379/0
 COLLECTION_NAME=pdf_docs_prod
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
+EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.1:8b
 OLLAMA_URL=http://ollama-service:11434
 ENABLE_OCR=false
-OCR_LANGS=eng
+OCR_LANGS=eng+hin
 ```
 
 Example `.env.docker`:
@@ -91,17 +93,18 @@ ENV=prod
 PYTHON_BASE_IMAGE=python:3.12-slim
 APP_PORT=8000
 OLLAMA_PORT=11434
-POSTGRES_URL=postgresql+psycopg2://postgres:postgres@postgres:5432/pdf_rag
+POSTGRES_URL=postgresql+psycopg://postgres:postgres@postgres:5432/pdf_rag
 REDIS_URL=redis://redis:6379/0
 COLLECTION_NAME=pdf_docs_prod
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
+EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.1:8b
 OLLAMA_URL=http://host.docker.internal:11434
-ENABLE_OCR=false
-OCR_LANGS=eng
+ENABLE_OCR=true
+OCR_LANGS=eng+hin
 ```
 
 ## Run locally
@@ -152,7 +155,8 @@ Services:
 - Normal text PDFs: extracted with `pypdf`
 - Tables in text PDFs: extracted with `pdfplumber` and converted into text before embedding
 - Image-only or scanned PDFs: optional OCR fallback is available with `ENABLE_OCR=true`
-- OCR runs through `ocrmypdf --skip-text`, so normal digital PDFs keep their text while scanned pages get a text layer
+- OCR runs page-by-page through Tesseract on rendered page images, so normal digital PDFs keep their extracted text while scanned pages are OCR'd directly from page images
+- Mixed PDFs are supported: if some pages already have text and some pages are image-only, OCR is merged only into the empty pages
 - Set `OCR_LANGS=eng` or `OCR_LANGS=eng+hin` depending on your documents
 
 ## API endpoints
@@ -175,5 +179,5 @@ Services:
 - Each user has a separate chat history.
 - Each user queries only their own indexed PDFs.
 - PDF ingestion is asynchronous through Celery.
-- Reindex resets and rebuilds that user’s vector collection.
+- Reindex drops and rebuilds that user’s dedicated vector table.
 - Embeddings are sent to Ollama in batches; if indexing still fails with Ollama `EOF` or `500` errors, lower `EMBEDDING_BATCH_SIZE`.

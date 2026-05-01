@@ -25,7 +25,7 @@ app.include_router(ingest.router)
 app.include_router(query.router)
 
 
-@app.get("/health")
+@app.get("/health", tags=["Default"])
 def health_check():
     return {
         "status": "ok",

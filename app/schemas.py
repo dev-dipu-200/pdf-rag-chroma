@@ -22,6 +22,7 @@ class AuthRequest(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
+    role: str
     created_at: datetime
 
 
@@ -46,6 +47,10 @@ class ChatSessionResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+
+
+class StatusResponse(BaseModel):
+    status: str
 
 
 class ChatMessageResponse(BaseModel):

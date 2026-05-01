@@ -1,14 +1,15 @@
 import os
 import re
+from hashlib import sha1
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
-import psycopg2
 from dotenv import load_dotenv
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama import OllamaLLM
-from langchain_community.vectorstores import PGVector
-from psycopg2 import sql
+from langchain_postgres import PGEngine, PGVectorStore
+import psycopg
+from psycopg import sql
 
 PROFILE_ENV_FILES = {
     "dev": ".env.dev",
@@ -51,6 +52,7 @@ ACTIVE_PROFILE = _load_profile_env()
 DEFAULT_ENV = "dev"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_EMBEDDING_VECTOR_SIZE = 768
 ENV_LLM_DEFAULTS = {
     "dev": "llama3.2:3b",
     "prod": "llama3.1:8b",
@@ -73,6 +75,7 @@ class RuntimeSettings:
     collection_name: str
     embedding_model: str
     embedding_batch_size: int
+    embedding_vector_size: int
     llm_model: str
     ollama_url: str
     jwt_secret_key: str
@@ -88,7 +91,7 @@ def _load_runtime_settings() -> RuntimeSettings:
         "http://ollama-service:11434" if env == "prod" else DEFAULT_OLLAMA_URL
     )
     postgres_url_default = (
-        "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/pdf_rag"
+        "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag"
     )
 
     return RuntimeSettings(
@@ -103,6 +106,10 @@ def _load_runtime_settings() -> RuntimeSettings:
         embedding_batch_size=max(
             1,
             int(_first_env("EMBEDDING_BATCH_SIZE", default="16")),
+        ),
+        embedding_vector_size=max(
+            1,
+            int(_first_env("EMBEDDING_VECTOR_SIZE", default=str(DEFAULT_EMBEDDING_VECTOR_SIZE))),
         ),
         llm_model=_first_env("LLM_MODEL", "OLLAMA_MODEL", default=llm_default),
         ollama_url=_first_env("OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default),
@@ -120,6 +127,7 @@ REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
 EMBEDDING_MODEL = SETTINGS.embedding_model
 EMBEDDING_BATCH_SIZE = SETTINGS.embedding_batch_size
+EMBEDDING_VECTOR_SIZE = SETTINGS.embedding_vector_size
 OLLAMA_MODEL = SETTINGS.llm_model
 OLLAMA_BASE_URL = SETTINGS.ollama_url
 JWT_SECRET_KEY = SETTINGS.jwt_secret_key
@@ -130,6 +138,8 @@ OCR_LANGS = SETTINGS.ocr_languages
 # Singleton-like clients
 _embeddings = None
 _vectorstores = {}
+_pgvector_engine = None
+_initialized_vector_tables = set()
 
 
 class EmbeddingInitializationError(RuntimeError):
@@ -139,7 +149,7 @@ class EmbeddingInitializationError(RuntimeError):
 def _split_postgres_url(database_url: str) -> tuple[str, str]:
     parsed = urlsplit(database_url)
     database_name = parsed.path.lstrip("/")
-    scheme = parsed.scheme.replace("+psycopg2", "")
+    scheme = parsed.scheme.replace("+psycopg2", "").replace("+psycopg", "")
     admin_url = urlunsplit(parsed._replace(scheme=scheme, path="/postgres"))
     return admin_url, database_name
 
@@ -149,9 +159,7 @@ def _ensure_postgres_database_exists() -> None:
     if not database_name:
         raise RuntimeError("POSTGRES_URL must include a database name.")
 
-    conn = psycopg2.connect(admin_url)
-    conn.autocommit = True
-    try:
+    with psycopg.connect(admin_url, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT 1 FROM pg_database WHERE datname = %s",
@@ -164,8 +172,6 @@ def _ensure_postgres_database_exists() -> None:
                     sql.Identifier(database_name)
                 )
             )
-    finally:
-        conn.close()
 
 
 def _normalize_collection_name(name: str) -> str:
@@ -182,6 +188,73 @@ def user_collection_name(user_id: int) -> str:
     return _normalize_collection_name(
         f"{COLLECTION_NAME}__user_{user_id}__{EMBEDDING_MODEL}"
     )
+
+
+def shared_collection_name() -> str:
+    return _normalize_collection_name(
+        f"{COLLECTION_NAME}__shared__{EMBEDDING_MODEL}"
+    )
+
+
+def _vector_table_name(name: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", name).strip("_").lower() or "default"
+    if not re.match(r"^[a-z_]", normalized):
+        normalized = f"v_{normalized}"
+    if len(normalized) <= 54:
+        return normalized
+    suffix = sha1(normalized.encode("utf-8")).hexdigest()[:8]
+    return f"{normalized[:45]}_{suffix}"
+
+
+def _pgvector_connection_url() -> str:
+    parsed = urlsplit(POSTGRES_URL)
+    scheme = parsed.scheme
+    if "+psycopg2" in scheme:
+        scheme = scheme.replace("+psycopg2", "+psycopg")
+    elif "+" not in scheme:
+        scheme = f"{scheme}+psycopg"
+    return urlunsplit(parsed._replace(scheme=scheme))
+
+
+def _database_connection_url() -> str:
+    parsed = urlsplit(POSTGRES_URL)
+    scheme = parsed.scheme.replace("+psycopg2", "").replace("+psycopg", "")
+    return urlunsplit(parsed._replace(scheme=scheme))
+
+
+def _get_pgvector_engine() -> PGEngine:
+    global _pgvector_engine
+    if _pgvector_engine is None:
+        _ensure_postgres_database_exists()
+        _pgvector_engine = PGEngine.from_connection_string(url=_pgvector_connection_url())
+    return _pgvector_engine
+
+
+def _vector_table_exists(table_name: str) -> bool:
+    with psycopg.connect(_database_connection_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass(%s)", (f"public.{table_name}",))
+            return cur.fetchone()[0] is not None
+
+
+def _ensure_vector_table(table_name: str) -> None:
+    if table_name in _initialized_vector_tables:
+        return
+    if not _vector_table_exists(table_name):
+        _get_pgvector_engine().init_vectorstore_table(
+            table_name=table_name,
+            vector_size=EMBEDDING_VECTOR_SIZE,
+        )
+    _initialized_vector_tables.add(table_name)
+
+
+def _drop_vector_table(table_name: str) -> None:
+    with psycopg.connect(_database_connection_url(), autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(table_name))
+            )
+    _initialized_vector_tables.discard(table_name)
 
 
 def get_embeddings():
@@ -201,37 +274,26 @@ def get_embeddings():
     return _embeddings
 
 
-def get_vectorstore(collection_name: str | None = None) -> PGVector:
+def get_vectorstore(collection_name: str | None = None) -> PGVectorStore:
     resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
-    vectorstore = _vectorstores.get(resolved_collection)
+    table_name = _vector_table_name(resolved_collection)
+    vectorstore = _vectorstores.get(table_name)
     if vectorstore is None:
-        _ensure_postgres_database_exists()
-        vectorstore = PGVector(
-            connection_string=POSTGRES_URL,
-            collection_name=resolved_collection,
-            embedding_function=get_embeddings(),
-            use_jsonb=True,
+        _ensure_vector_table(table_name)
+        vectorstore = PGVectorStore.create_sync(
+            engine=_get_pgvector_engine(),
+            table_name=table_name,
+            embedding_service=get_embeddings(),
         )
-        _vectorstores[resolved_collection] = vectorstore
+        _vectorstores[table_name] = vectorstore
     return vectorstore
 
 
-def reset_vectorstore(collection_name: str | None = None) -> PGVector:
+def reset_vectorstore(collection_name: str | None = None) -> PGVectorStore:
     resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
-    _ensure_postgres_database_exists()
-    store = _vectorstores.get(resolved_collection) or PGVector(
-        connection_string=POSTGRES_URL,
-        collection_name=resolved_collection,
-        embedding_function=get_embeddings(),
-        use_jsonb=True,
-    )
-
-    try:
-        store.delete_collection()
-    except Exception:
-        pass
-
-    _vectorstores.pop(resolved_collection, None)
+    table_name = _vector_table_name(resolved_collection)
+    _drop_vector_table(table_name)
+    _vectorstores.pop(table_name, None)
     return get_vectorstore(resolved_collection)
 
 

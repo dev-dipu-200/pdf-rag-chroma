@@ -13,7 +13,7 @@ from app.dependencies import (
     EmbeddingInitializationError,
     get_llm,
     get_vectorstore,
-    user_collection_name,
+    shared_collection_name,
 )
 from app.models import ChatMessage, ChatSession, PdfDocument, User
 from app.schemas import (
@@ -21,6 +21,7 @@ from app.schemas import (
     ChatSessionResponse,
     QueryRequest,
     QueryResponse,
+    StatusResponse,
 )
 from app.services.rag import build_answer_chain, format_docs
 
@@ -47,10 +48,10 @@ def _serialize_message(message: ChatMessage) -> ChatMessageResponse:
     )
 
 
-def _ensure_indexed_documents(db: Session, user_id: int) -> None:
+def _ensure_indexed_documents(db: Session) -> None:
     has_docs = (
         db.query(PdfDocument.id)
-        .filter(PdfDocument.user_id == user_id, PdfDocument.status == "indexed")
+        .filter(PdfDocument.status == "indexed")
         .first()
     )
     if has_docs is None:
@@ -60,13 +61,13 @@ def _ensure_indexed_documents(db: Session, user_id: int) -> None:
         )
 
 
-def _get_docs(user_id: int, question: str, top_k: int):
-    vectorstore = get_vectorstore(user_collection_name(user_id))
+def _get_docs(question: str, top_k: int):
+    vectorstore = get_vectorstore(shared_collection_name())
     return vectorstore.similarity_search(question, k=top_k)
 
 
-def _get_sources_and_context(user_id: int, question: str, top_k: int) -> tuple[list, list[str], str]:
-    docs = _get_docs(user_id, question, top_k)
+def _get_sources_and_context(question: str, top_k: int) -> tuple[list, list[str], str]:
+    docs = _get_docs(question, top_k)
     sources = list({d.metadata.get("source", "unknown") for d in docs})
     context = format_docs(docs)
     return docs, sources, context
@@ -83,11 +84,35 @@ def _make_title(question: str) -> str:
 
 def _get_or_create_session(db: Session, user: User, requested_session_id: int | None, question: str) -> ChatSession:
     if requested_session_id is not None:
-        return get_user_chat_session(db, user.id, requested_session_id)
+        existing_session = (
+            db.query(ChatSession)
+            .filter(ChatSession.id == requested_session_id, ChatSession.user_id == user.id)
+            .first()
+        )
+        if existing_session is not None:
+            return existing_session
+
+        logger.info(
+            "Requested chat session %s for user %s was not found; creating a new session.",
+            requested_session_id,
+            user.id,
+        )
 
     chat_session = ChatSession(
         user_id=user.id,
         title=_make_title(question),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(chat_session)
+    db.commit()
+    db.refresh(chat_session)
+    return chat_session
+
+
+def _create_chat_session(db: Session, user: User, title: str) -> ChatSession:
+    chat_session = ChatSession(
+        user_id=user.id,
+        title=title,
         updated_at=datetime.utcnow(),
     )
     db.add(chat_session)
@@ -141,18 +166,57 @@ def get_chat_messages(
     return [_serialize_message(message) for message in messages]
 
 
+@router.post("/sessions", response_model=ChatSessionResponse)
+def create_chat_session(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _serialize_session(_create_chat_session(db, current_user, "New chat"))
+
+
+@router.delete("/sessions/{session_id}", response_model=StatusResponse)
+def delete_chat_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    chat_session = get_user_chat_session(db, current_user.id, session_id)
+    db.delete(chat_session)
+    db.commit()
+    return StatusResponse(status="deleted")
+
+
+@router.delete("/sessions", response_model=StatusResponse)
+def delete_all_chat_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    (
+        db.query(ChatMessage)
+        .filter(ChatMessage.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return StatusResponse(status="deleted")
+
+
 @router.post("", response_model=QueryResponse)
 def ask_question(
     req: QueryRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_indexed_documents(db, current_user.id)
+    _ensure_indexed_documents(db)
     session = _get_or_create_session(db, current_user, req.session_id, req.question)
     _save_message(db, current_user.id, session.id, "user", req.question)
 
     try:
-        _, sources, context = _get_sources_and_context(current_user.id, req.question, req.top_k or 5)
+        _, sources, context = _get_sources_and_context(req.question, req.top_k or 5)
         if not context.strip():
             raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
     except (EmbeddingInitializationError, ResponseError) as exc:
@@ -187,12 +251,12 @@ def stream_answer(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_indexed_documents(db, current_user.id)
+    _ensure_indexed_documents(db)
     session = _get_or_create_session(db, current_user, req.session_id, req.question)
     _save_message(db, current_user.id, session.id, "user", req.question)
 
     try:
-        _, sources, context = _get_sources_and_context(current_user.id, req.question, req.top_k or 5)
+        _, sources, context = _get_sources_and_context(req.question, req.top_k or 5)
         if not context.strip():
             raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
     except (EmbeddingInitializationError, ResponseError) as exc:
