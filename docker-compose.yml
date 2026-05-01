@@ -1,0 +1,81 @@
+version: "3.9"
+
+x-app-base: &app-base
+  build:
+    context: .
+    args:
+      PYTHON_BASE_IMAGE: python:3.12-slim
+  volumes:
+    - uploads_data:/app/uploads
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: updesh_pgvector
+    environment:
+      POSTGRES_DB: pdf_rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pdf_rag"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: updesh_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  api:
+    <<: *app-base
+    container_name: updesh_api
+    command: ["bash", "docker/api-entrypoint.sh"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/pdf_rag
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    <<: *app-base
+    container_name: updesh_worker
+    command: ["celery", "-A", "celery_worker", "worker", "--loglevel=info", "--concurrency=2"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://dipu:dipu@postgres:5432/pdf_rag
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  uploads_data:

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF RAG Chatbot</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-start: #f4efe6;
+            --bg-end: #dfe9f3;
+            --panel: rgba(255, 255, 255, 0.92);
+            --user: #1d4ed8;
+            --assistant: #ffffff;
+            --text: #162033;
+            --muted: #5f6b7a;
+            --border: rgba(22, 32, 51, 0.08);
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 35%),
+                linear-gradient(135deg, var(--bg-start), var(--bg-end));
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .chat-shell {
+            max-width: 980px;
+            margin: 0 auto;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+        }
+
+        .chat-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(20, 27, 45, 0.14);
+            backdrop-filter: blur(12px);
+        }
+
+        .chat-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.95), rgba(239, 246, 255, 0.92));
+        }
+
+        .chat-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message-row {
+            display: flex;
+        }
+
+        .message-row.user {
+            justify-content: flex-end;
+        }
+
+        .message-row.assistant {
+            justify-content: flex-start;
+        }
+
+        .bubble {
+            max-width: min(80%, 720px);
+            padding: 14px 16px;
+            border-radius: 18px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            box-shadow: 0 12px 28px rgba(20, 27, 45, 0.08);
+        }
+
+        .user .bubble {
+            background: var(--user);
+            color: #fff;
+            border-bottom-right-radius: 6px;
+        }
+
+        .assistant .bubble {
+            background: var(--assistant);
+            color: var(--text);
+            border: 1px solid rgba(29, 78, 216, 0.12);
+            border-bottom-left-radius: 6px;
+        }
+
+        .meta {
+            margin-top: 8px;
+            font-size: 0.83rem;
+            color: var(--muted);
+        }
+
+        .chat-footer {
+            border-top: 1px solid var(--border);
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .composer {
+            display: grid;
+            grid-template-columns: 1fr 120px 120px;
+            gap: 12px;
+        }
+
+        .status-line {
+            min-height: 24px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        .typing::after {
+            content: "";
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            margin-left: 6px;
+            border-radius: 50%;
+            background: #60a5fa;
+            animation: pulse 1s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 0.25;
+                transform: translateY(0);
+            }
+
+            50% {
+                opacity: 1;
+                transform: translateY(-1px);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .chat-shell {
+                padding: 0;
+            }
+
+            .chat-card {
+                border-radius: 0;
+                min-height: 100vh;
+            }
+
+            .composer {
+                grid-template-columns: 1fr;
+            }
+
+            .bubble {
+                max-width: 92%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-shell">
+        <div class="chat-card">
+            <div class="chat-header">
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                    <div>
+                        <h1 class="h4 mb-1">PDF RAG Chatbot</h1>
+                        <p class="mb-0 text-secondary">Ask questions from your indexed PDFs and watch the answer stream
+                            live.</p>
+                    </div>
+                    <span class="badge text-bg-primary px-3 py-2">Streaming</span>
+                </div>
+            </div>
+
+            <div id="chatBody" class="chat-body">
+                <div class="message-row assistant">
+                    <div class="bubble">
+                        Hello. PDFs ingest ho chuke hain to aap seedha sawal pooch sakte hain.
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-footer">
+                <form id="chatForm">
+                    <div class="composer">
+                        <textarea id="questionInput" class="form-control" rows="2"
+                            placeholder="Type your question here..." required></textarea>
+                        <input id="topKInput" class="form-control" type="number" min="1" max="15" value="5"
+                            title="Top K">
+                        <button id="sendButton" class="btn btn-primary btn-lg" type="submit">Send</button>
+                    </div>
+                    <div id="statusLine" class="status-line"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatBody = document.getElementById("chatBody");
+        const chatForm = document.getElementById("chatForm");
+        const questionInput = document.getElementById("questionInput");
+        const topKInput = document.getElementById("topKInput");
+        const sendButton = document.getElementById("sendButton");
+        const statusLine = document.getElementById("statusLine");
+
+        function scrollToBottom() {
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function addMessage(role, text) {
+            const row = document.createElement("div");
+            row.className = `message-row ${role}`;
+
+            const bubble = document.createElement("div");
+            bubble.className = "bubble";
+            bubble.textContent = text;
+
+            row.appendChild(bubble);
+            chatBody.appendChild(row);
+            scrollToBottom();
+
+            return { row, bubble };
+        }
+
+        function appendMeta(row, text) {
+            const meta = document.createElement("div");
+            meta.className = "meta";
+            meta.textContent = text;
+            row.querySelector(".bubble").appendChild(meta);
+            scrollToBottom();
+        }
+
+        function setBusy(isBusy) {
+            sendButton.disabled = isBusy;
+            questionInput.disabled = isBusy;
+            topKInput.disabled = isBusy;
+        }
+
+        async function streamAnswer(question, topK) {
+            const userMessage = addMessage("user", question);
+            const assistantMessage = addMessage("assistant", "");
+            assistantMessage.bubble.classList.add("typing");
+
+            setBusy(true);
+            statusLine.textContent = "Connecting to model...";
+
+            try {
+                const response = await fetch("/query/stream", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question, top_k: topK })
+                });
+
+                if (!response.ok || !response.body) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || "Streaming request failed.");
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+                let sources = [];
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        if (!line.trim()) {
+                            continue;
+                        }
+
+                        const payload = JSON.parse(line);
+
+                        if (payload.type === "meta") {
+                            sources = payload.sources || [];
+                            continue;
+                        }
+
+                        if (payload.type === "start") {
+                            statusLine.textContent = `Generating response with ${payload.provider}...`;
+                            assistantMessage.bubble.classList.remove("typing");
+                            continue;
+                        }
+
+                        if (payload.type === "token") {
+                            assistantMessage.bubble.textContent += payload.content;
+                            scrollToBottom();
+                            continue;
+                        }
+
+                        if (payload.type === "done") {
+                            assistantMessage.bubble.classList.remove("typing");
+                            const sourceText = sources.length ? `Sources: ${sources.join(", ")}` : "Sources: none";
+                            appendMeta(assistantMessage.row, `${payload.provider} • ${sourceText}`);
+                            statusLine.textContent = "Response complete.";
+                            continue;
+                        }
+
+                        if (payload.type === "error") {
+                            throw new Error(payload.detail || "Unknown streaming error.");
+                        }
+                    }
+                }
+            } catch (error) {
+                assistantMessage.bubble.classList.remove("typing");
+                assistantMessage.bubble.textContent = `Error: ${error.message}`;
+                statusLine.textContent = "Request failed.";
+            } finally {
+                setBusy(false);
+                questionInput.value = "";
+                questionInput.focus();
+                scrollToBottom();
+            }
+        }
+
+        chatForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const question = questionInput.value.trim();
+            const topK = Number(topKInput.value) || 5;
+
+            if (!question) {
+                return;
+            }
+
+            await streamAnswer(question, topK);
+        });
+
+        questionInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                chatForm.requestSubmit();
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+fastapi
+jinja2
+uvicorn[standard]
+python-multipart
+pydantic
+python-dotenv
+langchain
+langchain-community
+langchain-text-splitters
+langchain-ollama
+pgvector
+psycopg2-binary
+SQLAlchemy
+pymupdf
