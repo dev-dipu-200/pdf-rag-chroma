@@ -13,6 +13,8 @@ MIN_RETRY_CHUNK_SIZE = 80
 OCR_RENDER_SCALE = 2.0
 TREE_BRANCH_FACTOR = 4
 TREE_NODE_SNIPPET_CHARS = 320
+VISUAL_KEYWORDS = ("figure", "fig.", "fig ", "chart", "graph", "plot", "diagram")
+VISUAL_NEARBY_WORD_LIMIT = 40
 
 
 def _normalize_text(text: str) -> str:
@@ -100,13 +102,100 @@ def _extract_page_texts(filepath: str) -> list[str]:
 
 
 def _table_to_text(table: list[list[str | None]]) -> str:
-    lines: list[str] = []
+    normalized_rows: list[list[str]] = []
     for row in table:
         cells = [_normalize_text(cell or "") for cell in row]
-        cleaned = [cell for cell in cells if cell]
-        if cleaned:
-            lines.append(" | ".join(cleaned))
+        if any(cells):
+            normalized_rows.append(cells)
+
+    if not normalized_rows:
+        return ""
+
+    header = normalized_rows[0]
+    data_rows = normalized_rows[1:]
+    lines: list[str] = []
+
+    header_cells = [cell for cell in header if cell]
+    if header_cells:
+        lines.append(f"Columns: {' | '.join(header_cells)}")
+
+    for row_index, row in enumerate(data_rows, start=1):
+        pairs: list[str] = []
+        for col_index, cell in enumerate(row):
+            if not cell:
+                continue
+            column_name = header[col_index] if col_index < len(header) and header[col_index] else f"column_{col_index + 1}"
+            pairs.append(f"{column_name}: {cell}")
+        if pairs:
+            lines.append(f"Row {row_index}: " + " | ".join(pairs))
+
+    if len(lines) == 1 and header_cells:
+        return header_cells[0] if len(header_cells) == 1 else " | ".join(header_cells)
     return "\n".join(lines).strip()
+
+
+def _extract_visual_lines(page_text: str) -> list[str]:
+    lines = [_normalize_text(line) for line in page_text.splitlines()]
+    return [
+        line for line in lines
+        if line and any(keyword in line.lower() for keyword in VISUAL_KEYWORDS)
+    ]
+
+
+def _collect_words_near_visuals(page) -> list[str]:
+    nearby: list[str] = []
+    words = page.extract_words() or []
+    if not words:
+        return nearby
+
+    visual_regions = list(page.images or [])
+    visual_regions.extend(rect for rect in (page.rects or []) if rect.get("width", 0) > 120 and rect.get("height", 0) > 120)
+    if not visual_regions:
+        return nearby
+
+    for region_index, region in enumerate(visual_regions, start=1):
+        x0 = float(region.get("x0", 0))
+        x1 = float(region.get("x1", 0))
+        top = float(region.get("top", 0))
+        bottom = float(region.get("bottom", 0))
+
+        related_words = [
+            _normalize_text(word.get("text", ""))
+            for word in words
+            if (
+                x0 - 40 <= float(word.get("x0", 0)) <= x1 + 40
+                and top - 60 <= float(word.get("top", 0)) <= bottom + 60
+            )
+        ]
+        related_words = [word for word in related_words if word]
+        if related_words:
+            nearby.append(
+                f"Visual {region_index} nearby text: {' '.join(related_words[:VISUAL_NEARBY_WORD_LIMIT])}"
+            )
+
+    return nearby
+
+
+def _extract_page_visuals(filepath: str) -> dict[int, list[str]]:
+    page_visuals: dict[int, list[str]] = {}
+
+    with pdfplumber.open(filepath) as pdf:
+        for page_index, page in enumerate(pdf.pages, start=1):
+            page_text = page.extract_text() or ""
+            visual_lines = _extract_visual_lines(page_text)
+            nearby_words = _collect_words_near_visuals(page)
+            visuals = visual_lines + nearby_words
+            deduped: list[str] = []
+            seen: set[str] = set()
+            for item in visuals:
+                normalized = sanitize_text_for_embedding(item)
+                if normalized and normalized not in seen:
+                    seen.add(normalized)
+                    deduped.append(normalized)
+            if deduped:
+                page_visuals[page_index] = deduped
+
+    return page_visuals
 
 
 def _extract_page_tables(filepath: str) -> dict[int, list[str]]:
@@ -126,8 +215,8 @@ def _extract_page_tables(filepath: str) -> dict[int, list[str]]:
     return page_tables
 
 
-def _extract_pdf_content(filepath: str) -> tuple[list[str], dict[int, list[str]]]:
-    return _extract_page_texts(filepath), _extract_page_tables(filepath)
+def _extract_pdf_content(filepath: str) -> tuple[list[str], dict[int, list[str]], dict[int, list[str]]]:
+    return _extract_page_texts(filepath), _extract_page_tables(filepath), _extract_page_visuals(filepath)
 
 
 def _resolve_tesseract_languages(ocr_languages: str) -> str:
@@ -180,6 +269,7 @@ def _ocr_pdf_pages(
 def _merge_ocr_page_texts(
     page_texts: list[str],
     page_tables: dict[int, list[str]],
+    page_visuals: dict[int, list[str]],
     ocr_page_texts: list[str],
 ) -> list[str]:
     merged = list(page_texts)
@@ -190,7 +280,8 @@ def _merge_ocr_page_texts(
     for page_number in range(1, total_pages + 1):
         has_text = bool(page_number <= len(page_texts) and page_texts[page_number - 1].strip())
         has_tables = bool(page_tables.get(page_number))
-        if has_text or has_tables:
+        has_visuals = bool(page_visuals.get(page_number))
+        if has_text or has_tables or has_visuals:
             continue
         if page_number <= len(ocr_page_texts):
             merged[page_number - 1] = sanitize_text_for_embedding(ocr_page_texts[page_number - 1])
@@ -202,6 +293,7 @@ def _build_documents_from_content(
     filepath: str,
     page_texts: list[str],
     page_tables: dict[int, list[str]],
+    page_visuals: dict[int, list[str]],
     metadata: dict | None = None,
 ) -> list[Document]:
     base_metadata = metadata or {}
@@ -215,6 +307,9 @@ def _build_documents_from_content(
 
         for table_index, table_text in enumerate(page_tables.get(page_number, []), start=1):
             sections.append(f"Table {table_index} on page {page_number}:\n{table_text}")
+
+        for visual_index, visual_text in enumerate(page_visuals.get(page_number, []), start=1):
+            sections.append(f"Figure or chart context {visual_index} on page {page_number}:\n{visual_text}")
 
         page_content = sanitize_text_for_embedding("\n\n".join(section for section in sections if section))
         if not page_content:
@@ -315,8 +410,8 @@ def _build_tree_documents(leaf_documents: list[Document]) -> list[Document]:
 
 
 def _build_documents(filepath: str, metadata: dict | None = None) -> list[Document]:
-    page_texts, page_tables = _extract_pdf_content(filepath)
-    return _build_documents_from_content(filepath, page_texts, page_tables, metadata)
+    page_texts, page_tables, page_visuals = _extract_pdf_content(filepath)
+    return _build_documents_from_content(filepath, page_texts, page_tables, page_visuals, metadata)
 
 
 def extract_and_chunk_pdf(
@@ -325,8 +420,8 @@ def extract_and_chunk_pdf(
     enable_ocr: bool = False,
     ocr_languages: str = "eng",
 ) -> list[Document]:
-    page_texts, page_tables = _extract_pdf_content(filepath)
-    documents = _build_documents_from_content(filepath, page_texts, page_tables, metadata)
+    page_texts, page_tables, page_visuals = _extract_pdf_content(filepath)
+    documents = _build_documents_from_content(filepath, page_texts, page_tables, page_visuals, metadata)
     if documents:
         if not enable_ocr:
             return documents + _build_tree_documents(documents)
@@ -334,7 +429,7 @@ def extract_and_chunk_pdf(
         empty_pages = [
             page_number
             for page_number in range(1, len(page_texts) + 1)
-            if not page_texts[page_number - 1].strip() and not page_tables.get(page_number)
+            if not page_texts[page_number - 1].strip() and not page_tables.get(page_number) and not page_visuals.get(page_number)
         ]
         if not empty_pages:
             return documents
@@ -345,11 +440,12 @@ def extract_and_chunk_pdf(
             page_numbers=empty_pages,
             total_pages=len(page_texts),
         )
-        merged_page_texts = _merge_ocr_page_texts(page_texts, page_tables, ocr_page_texts)
+        merged_page_texts = _merge_ocr_page_texts(page_texts, page_tables, page_visuals, ocr_page_texts)
         merged_documents = _build_documents_from_content(
             filepath,
             merged_page_texts,
             page_tables,
+            page_visuals,
             metadata,
         )
         if merged_documents:
@@ -358,7 +454,7 @@ def extract_and_chunk_pdf(
 
     if enable_ocr:
         ocr_page_texts = _ocr_pdf_pages(filepath, ocr_languages)
-        documents = _build_documents_from_content(filepath, ocr_page_texts, {}, metadata)
+        documents = _build_documents_from_content(filepath, ocr_page_texts, {}, {}, metadata)
         if documents:
             return documents + _build_tree_documents(documents)
 

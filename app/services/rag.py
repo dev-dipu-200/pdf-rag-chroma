@@ -9,6 +9,10 @@ Answer the question using ONLY the context below.
 If the answer is not present in the context, say that clearly.
 Reply in the same language as the user's question.
 The question and context may be in Hindi, English, or a mix of both. Use whichever context is relevant.
+Prefer exact values from tables when available.
+For figures, charts, and graphs, answer only from extracted caption or nearby text in the context.
+If chart or graph values are not clearly available in the context, say that the visual data is not precise enough to answer confidently.
+When possible, mention the source page number.
 
 Context:
 {context}

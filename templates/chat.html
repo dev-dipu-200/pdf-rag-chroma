@@ -930,6 +930,8 @@
             input.addEventListener("beforeinput", preventLeadingWhitespace);
             input.addEventListener("input", sanitizeLeadingWhitespace);
         });
+        questionInput.addEventListener("beforeinput", preventLeadingWhitespace);
+        questionInput.addEventListener("input", sanitizeLeadingWhitespace);
         togglePasswordButton.addEventListener("click", () => {
             passwordInput.type = passwordInput.type === "password" ? "text" : "password";
             updatePasswordToggle();
