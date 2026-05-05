@@ -17,7 +17,9 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-init_db()
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
 
 app.include_router(auth.router)
 app.include_router(chat.router)
@@ -26,7 +28,7 @@ app.include_router(query.router)
 
 
 @app.get("/health", tags=["Default"])
-def health_check():
+async def health_check():
     return {
         "status": "ok",
         "environment": settings.env,

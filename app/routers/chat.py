@@ -9,7 +9,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-def root_chat(request: Request, current_user=Depends(get_optional_user)):
+async def root_chat(request: Request, current_user=Depends(get_optional_user)):
     return templates.TemplateResponse(
         request=request,
         name="chat.html",
@@ -18,7 +18,7 @@ def root_chat(request: Request, current_user=Depends(get_optional_user)):
 
 
 @router.get("/chat", response_class=HTMLResponse)
-def chat_page(request: Request, current_user=Depends(get_optional_user)):
+async def chat_page(request: Request, current_user=Depends(get_optional_user)):
     return templates.TemplateResponse(
         request=request,
         name="chat.html",

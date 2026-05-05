@@ -5,7 +5,8 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
@@ -62,7 +63,7 @@ async def upload_pdf(
         ),
     ],
     current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     upload_dir = _user_upload_dir(current_user.id)
 
@@ -75,8 +76,11 @@ async def upload_pdf(
     suffix = Path(file.filename).suffix.lower() or ".pdf"
     stored_filename = f"{uuid4().hex}{suffix}"
     stored_path = upload_dir / stored_filename
+    
+    # Save file asynchronously
+    content = await file.read()
     with stored_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(content)
 
     document = PdfDocument(
         user_id=current_user.id,
@@ -88,9 +92,9 @@ async def upload_pdf(
     )
 
     db.add(document)
-
-    db.commit()
-    db.refresh(document)
+    await db.commit()
+    await db.refresh(document)
+    
     try:
         task = index_pdf_document.delay(document.id)
         document.celery_task_id = task.id
@@ -99,7 +103,7 @@ async def upload_pdf(
         document.error_message = str(exc)
         document.updated_at = datetime.utcnow()
 
-    db.commit()
+    await db.commit()
 
     return IngestResponse(
         document=_serialize_document(document),
@@ -108,30 +112,30 @@ async def upload_pdf(
 
 
 @router.get("/documents", response_model=list[PdfDocumentResponse])
-def list_documents(
+async def list_documents(
     current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    documents = (
-        db.query(PdfDocument)
+    result = await db.execute(
+        select(PdfDocument)
         .filter(PdfDocument.user_id == current_user.id)
         .order_by(PdfDocument.created_at.desc())
-        .all()
     )
+    documents = result.scalars().all()
     return [_serialize_document(document) for document in documents]
 
 
 @router.post("/reindex", response_model=ReindexResponse)
-def reindex_uploaded_pdfs(
+async def reindex_uploaded_pdfs(
     current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    documents = (
-        db.query(PdfDocument)
+    result = await db.execute(
+        select(PdfDocument)
         .filter(PdfDocument.user_id == current_user.id)
         .order_by(PdfDocument.created_at.asc())
-        .all()
     )
+    documents = result.scalars().all()
     if not documents:
         raise HTTPException(
             status_code=400,
@@ -147,7 +151,7 @@ def reindex_uploaded_pdfs(
     task = reindex_user_documents.delay(current_user.id)
     for document in documents:
         document.celery_task_id = task.id
-    db.commit()
+    await db.commit()
 
     return ReindexResponse(
         queued_documents=len(documents),

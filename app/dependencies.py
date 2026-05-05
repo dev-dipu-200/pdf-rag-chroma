@@ -91,7 +91,7 @@ def _load_runtime_settings() -> RuntimeSettings:
         "http://ollama-service:11434" if env == "prod" else DEFAULT_OLLAMA_URL
     )
     postgres_url_default = (
-        "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag"
+        "postgresql://postgres:postgres@127.0.0.1:5432/pdf_rag"
     )
 
     return RuntimeSettings(
@@ -123,6 +123,23 @@ def _load_runtime_settings() -> RuntimeSettings:
 SETTINGS = _load_runtime_settings()
 
 POSTGRES_URL = SETTINGS.postgres_url
+
+# Helper for SQLAlchemy URLs
+def get_async_postgres_url() -> str:
+    url = POSTGRES_URL
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if "asyncpg" not in url and "psycopg" not in url:
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
+
+def get_sync_postgres_url() -> str:
+    url = POSTGRES_URL
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if "psycopg" not in url and "asyncpg" not in url:
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    return url
 REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
 CHROMA_PERSIST_DIRECTORY = SETTINGS.chroma_persist_directory
@@ -153,20 +170,23 @@ def _split_postgres_url(database_url: str) -> tuple[str, str]:
     return admin_url, database_name
 
 
-def _ensure_postgres_database_exists() -> None:
+async def _ensure_postgres_database_exists() -> None:
     admin_url, database_name = _split_postgres_url(POSTGRES_URL)
     if not database_name:
         raise RuntimeError("POSTGRES_URL must include a database name.")
 
-    with psycopg.connect(admin_url, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
+    # Convert asyncpg/other async schemes back to psycopg for the admin connection if needed
+    # but psycopg 3 is async capable. We just need a simple check.
+    # Note: admin_url from _split_postgres_url already has scheme normalized (no +asyncpg)
+    async with await psycopg.AsyncConnection.connect(admin_url, autocommit=True) as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
                 "SELECT 1 FROM pg_database WHERE datname = %s",
                 (database_name,),
             )
-            if cur.fetchone():
+            if await cur.fetchone():
                 return
-            cur.execute(
+            await cur.execute(
                 sql.SQL("CREATE DATABASE {}").format(
                     sql.Identifier(database_name)
                 )

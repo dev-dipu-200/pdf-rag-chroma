@@ -6,7 +6,8 @@ from typing import Optional
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import get_db
 from app.dependencies import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_KEY
@@ -63,9 +64,9 @@ def _decode_token(token: str) -> dict:
         ) from exc
 
 
-def get_current_user(
+async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
@@ -80,7 +81,8 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid bearer token.",
         )
-    user = db.query(User).filter(User.id == int(subject)).first()
+    result = await db.execute(select(User).filter(User.id == int(subject)))
+    user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,9 +91,9 @@ def get_current_user(
     return user
 
 
-def get_optional_user(
+async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[User]:
     if credentials is None or credentials.scheme.lower() != "bearer":
         return None
@@ -102,21 +104,22 @@ def get_optional_user(
     subject = payload.get("sub")
     if subject is None:
         return None
-    return db.query(User).filter(User.id == int(subject)).first()
+    result = await db.execute(select(User).filter(User.id == int(subject)))
+    return result.scalar_one_or_none()
 
 
-def get_user_chat_session(db: Session, user_id: int, session_id: int) -> ChatSession:
-    chat_session = (
-        db.query(ChatSession)
+async def get_user_chat_session(db: AsyncSession, user_id: int, session_id: int) -> ChatSession:
+    result = await db.execute(
+        select(ChatSession)
         .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
-        .first()
     )
+    chat_session = result.scalar_one_or_none()
     if chat_session is None:
         raise HTTPException(status_code=404, detail="Chat session not found.")
     return chat_session
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
