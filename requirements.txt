@@ -6,12 +6,12 @@ pydantic
 python-dotenv
 PyJWT
 celery[redis]
-langchain-postgres
+chromadb
+langchain-chroma
 langchain-ollama
 pypdf
 pdfplumber
 pypdfium2
-pgvector
 psycopg[binary]
 pytesseract
 SQLAlchemy

@@ -23,7 +23,9 @@ def format_docs(docs):
         (
             f"{doc.page_content} "
             f"(source: {doc.metadata.get('source', 'unknown')}, "
-            f"page: {doc.metadata.get('page', 'unknown')})"
+            f"page: {doc.metadata.get('page', 'unknown')}, "
+            f"type: {doc.metadata.get('content_type', 'unknown')}, "
+            f"tree_level: {doc.metadata.get('tree_level', '0')})"
         )
         for doc in docs
     )

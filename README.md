@@ -3,14 +3,14 @@
 FastAPI app for a local multi-user PDF chatbot:
 
 - local Ollama for answers with `llama3`
-- local Ollama embeddings for pgvector with `nomic-embed-text`
+- local Ollama embeddings for ChromaDB with `nomic-embed-text`
 - `pypdf` for text extraction
 - `pdfplumber` for table extraction
-- PostgreSQL + pgvector with `langchain-postgres` for vector storage
+- ChromaDB for vector storage
 - Celery + Redis for background PDF ingestion
 - OAuth2-style bearer token auth for API access
 - optional OCR fallback with Tesseract for scanned PDFs
-- per-user login, private document space, and private chat history
+- PostgreSQL for login, roles, document metadata, and private chat history
 
 ## Architecture
 
@@ -19,7 +19,7 @@ FastAPI app for a local multi-user PDF chatbot:
 - `app/routers/query.py`: chat sessions, message history, RAG answers
 - `app/tasks.py`: Celery ingestion and reindex tasks
 - `app/models.py`: users, sessions, chat history, PDF metadata
-- `app/dependencies.py`: Ollama, pgvector, runtime settings
+- `app/dependencies.py`: Ollama, ChromaDB, runtime settings
 - `app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and chunking
 - `templates/chat.html`: login + upload + chat UI
 
@@ -52,9 +52,9 @@ OLLAMA_PORT=11434
 POSTGRES_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag
 REDIS_URL=redis://127.0.0.1:6379/0
 COLLECTION_NAME=pdf_docs_dev
+CHROMA_PERSIST_DIRECTORY=./chroma_data
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
-EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.2:3b
@@ -74,9 +74,9 @@ OLLAMA_PORT=11434
 POSTGRES_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag
 REDIS_URL=redis://redis:6379/0
 COLLECTION_NAME=pdf_docs_prod
+CHROMA_PERSIST_DIRECTORY=./chroma_data
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
-EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.1:8b
@@ -96,9 +96,9 @@ OLLAMA_PORT=11434
 POSTGRES_URL=postgresql+psycopg://postgres:postgres@postgres:5432/pdf_rag
 REDIS_URL=redis://redis:6379/0
 COLLECTION_NAME=pdf_docs_prod
+CHROMA_PERSIST_DIRECTORY=/app/chroma_data
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
-EMBEDDING_VECTOR_SIZE=768
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_MODEL=llama3.1:8b
@@ -124,7 +124,7 @@ uvicorn main:app --reload
 celery -A celery_worker worker --loglevel=info --concurrency=2
 ```
 
-You also need PostgreSQL with pgvector and Redis running.
+You also need PostgreSQL and Redis running.
 
 ## Run with Docker Compose
 
@@ -136,8 +136,9 @@ Services:
 
 - `api`: FastAPI app on `http://localhost:8000`
 - `worker`: Celery worker for PDF ingestion
-- `postgres`: pgvector database
+- `postgres`: auth/history/document metadata database
 - `redis`: queue broker/backend
+- `chroma_data`: persisted ChromaDB collections
 
 ## Main flow
 
@@ -147,8 +148,8 @@ Services:
 4. Upload a PDF.
 5. PDFs are queued to Celery and indexed in the background.
 6. Ask questions from the UI.
-7. Retrieval runs only against that user’s own vector collection.
-8. Chat sessions and messages are stored per user.
+7. Retrieval runs against the shared ChromaDB collection built from uploaded PDFs.
+8. Chat sessions and messages are stored per user in PostgreSQL.
 
 ## PDF handling
 
@@ -177,7 +178,7 @@ Services:
 ## Current behavior
 
 - Each user has a separate chat history.
-- Each user queries only their own indexed PDFs.
+- Retrieval reads from the shared ChromaDB PDF collection.
 - PDF ingestion is asynchronous through Celery.
-- Reindex drops and rebuilds that user’s dedicated vector table.
+- Reindex drops and rebuilds the shared ChromaDB collection.
 - Embeddings are sent to Ollama in batches; if indexing still fails with Ollama `EOF` or `500` errors, lower `EMBEDDING_BATCH_SIZE`.

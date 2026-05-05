@@ -63,11 +63,11 @@ def _ensure_indexed_documents(db: Session) -> None:
 
 def _get_docs(question: str, top_k: int):
     vectorstore = get_vectorstore(shared_collection_name())
-    return vectorstore.similarity_search(question, k=top_k)
+    return vectorstore.similarity_search(question, k=max(top_k * 2, top_k + 2))
 
 
 def _get_sources_and_context(question: str, top_k: int) -> tuple[list, list[str], str]:
-    docs = _get_docs(question, top_k)
+    docs = _get_docs(question, top_k)[:top_k]
     sources = list({d.metadata.get("source", "unknown") for d in docs})
     context = format_docs(docs)
     return docs, sources, context
@@ -218,7 +218,7 @@ def ask_question(
     try:
         _, sources, context = _get_sources_and_context(req.question, req.top_k or 5)
         if not context.strip():
-            raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
+            raise HTTPException(status_code=404, detail="No relevant PDF pages found for this question.")
     except (EmbeddingInitializationError, ResponseError) as exc:
         raise HTTPException(
             status_code=503,
@@ -258,7 +258,7 @@ def stream_answer(
     try:
         _, sources, context = _get_sources_and_context(req.question, req.top_k or 5)
         if not context.strip():
-            raise HTTPException(status_code=404, detail="No relevant PDF chunks found for this question.")
+            raise HTTPException(status_code=404, detail="No relevant PDF pages found for this question.")
     except (EmbeddingInitializationError, ResponseError) as exc:
         raise HTTPException(
             status_code=503,

@@ -1,6 +1,5 @@
 import re
 from pathlib import Path
-from uuid import uuid4
 
 import pdfplumber
 from langchain_core.documents import Document
@@ -12,6 +11,8 @@ CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 200
 MIN_RETRY_CHUNK_SIZE = 80
 OCR_RENDER_SCALE = 2.0
+TREE_BRANCH_FACTOR = 4
+TREE_NODE_SNIPPET_CHARS = 320
 
 
 def _normalize_text(text: str) -> str:
@@ -206,39 +207,111 @@ def _build_documents_from_content(
     base_metadata = metadata or {}
     filename = Path(filepath).name
     documents: list[Document] = []
-    chunk_index = 0
 
     for page_number, page_text in enumerate(page_texts, start=1):
-        sections: list[tuple[str, str]] = []
+        sections: list[str] = []
         if page_text:
-            sections.append(("text", page_text))
+            sections.append(page_text)
 
         for table_index, table_text in enumerate(page_tables.get(page_number, []), start=1):
-            sections.append(
-                (
-                    "table",
-                    f"Table {table_index} on page {page_number}:\n{table_text}",
-                )
-            )
+            sections.append(f"Table {table_index} on page {page_number}:\n{table_text}")
 
-        for content_type, section_text in sections:
-            for chunk in _split_text(section_text):
-                documents.append(
-                    Document(
-                        page_content=chunk,
-                        metadata={
-                            "source": filename,
-                            "chunk_id": str(uuid4()),
-                            "chunk_index": chunk_index,
-                            "page": str(page_number),
-                            "content_type": content_type,
-                            **base_metadata,
-                        },
-                    )
-                )
-                chunk_index += 1
+        page_content = sanitize_text_for_embedding("\n\n".join(section for section in sections if section))
+        if not page_content:
+            continue
+
+        documents.append(
+            Document(
+                page_content=page_content,
+                metadata={
+                    "source": filename,
+                    "page": str(page_number),
+                    "page_number": str(page_number),
+                    "content_type": "page",
+                    **base_metadata,
+                },
+            )
+        )
 
     return documents
+
+
+def _page_range_label(page_start: int, page_end: int) -> str:
+    if page_start == page_end:
+        return str(page_start)
+    return f"{page_start}-{page_end}"
+
+
+def _condense_for_tree_node(text: str, max_chars: int = TREE_NODE_SNIPPET_CHARS) -> str:
+    cleaned = sanitize_text_for_embedding(text)
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    split_at = cleaned.rfind(". ", 0, max_chars)
+    if split_at == -1:
+        split_at = cleaned.rfind("\n", 0, max_chars)
+    if split_at == -1:
+        split_at = max_chars
+
+    condensed = cleaned[:split_at].strip()
+    return condensed or cleaned[:max_chars].strip()
+
+
+def _build_tree_documents(leaf_documents: list[Document]) -> list[Document]:
+    if len(leaf_documents) <= 1:
+        return []
+
+    tree_documents: list[Document] = []
+    current_level = leaf_documents
+    level = 1
+
+    while len(current_level) > 1:
+        next_level: list[Document] = []
+        for start in range(0, len(current_level), TREE_BRANCH_FACTOR):
+            children = current_level[start : start + TREE_BRANCH_FACTOR]
+            if len(children) <= 1:
+                next_level.extend(children)
+                continue
+
+            first_page = int(children[0].metadata.get("page_start") or children[0].metadata.get("page") or 0)
+            last_page = int(children[-1].metadata.get("page_end") or children[-1].metadata.get("page") or 0)
+            source = children[0].metadata.get("source", "unknown")
+            document_id = children[0].metadata.get("document_id")
+            snippets = [
+                f"Pages {_page_range_label(int(child.metadata.get('page_start') or child.metadata.get('page') or 0), int(child.metadata.get('page_end') or child.metadata.get('page') or 0))}: "
+                f"{_condense_for_tree_node(child.page_content)}"
+                for child in children
+            ]
+            content = sanitize_text_for_embedding(
+                f"Tree node level {level} covering pages {_page_range_label(first_page, last_page)}.\n\n"
+                + "\n\n".join(snippets)
+            )
+            if not content:
+                continue
+
+            node = Document(
+                page_content=content,
+                metadata={
+                    "source": source,
+                    "document_id": document_id,
+                    "tree_level": str(level),
+                    "content_type": "tree",
+                    "page_start": str(first_page),
+                    "page_end": str(last_page),
+                    "page": _page_range_label(first_page, last_page),
+                    "page_number": _page_range_label(first_page, last_page),
+                    "child_count": str(len(children)),
+                },
+            )
+            tree_documents.append(node)
+            next_level.append(node)
+
+        if len(next_level) == len(current_level):
+            break
+        current_level = next_level
+        level += 1
+
+    return tree_documents
 
 
 def _build_documents(filepath: str, metadata: dict | None = None) -> list[Document]:
@@ -256,7 +329,7 @@ def extract_and_chunk_pdf(
     documents = _build_documents_from_content(filepath, page_texts, page_tables, metadata)
     if documents:
         if not enable_ocr:
-            return documents
+            return documents + _build_tree_documents(documents)
 
         empty_pages = [
             page_number
@@ -280,14 +353,14 @@ def extract_and_chunk_pdf(
             metadata,
         )
         if merged_documents:
-            return merged_documents
-        return documents
+            return merged_documents + _build_tree_documents(merged_documents)
+        return documents + _build_tree_documents(documents)
 
     if enable_ocr:
         ocr_page_texts = _ocr_pdf_pages(filepath, ocr_languages)
         documents = _build_documents_from_content(filepath, ocr_page_texts, {}, metadata)
         if documents:
-            return documents
+            return documents + _build_tree_documents(documents)
 
     raise ValueError(
         "No readable text or tables were extracted from the PDF. "

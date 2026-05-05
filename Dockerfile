@@ -28,7 +28,7 @@ COPY main.py ./main.py
 COPY celery_worker.py ./celery_worker.py
 COPY .env.docker ./.env.docker
 
-RUN mkdir -p /app/uploads
+RUN mkdir -p /app/uploads /app/chroma_data
 
 EXPOSE 8000
 

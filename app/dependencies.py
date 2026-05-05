@@ -1,13 +1,14 @@
 import os
 import re
-from hashlib import sha1
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+import chromadb
 from dotenv import load_dotenv
+from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama import OllamaLLM
-from langchain_postgres import PGEngine, PGVectorStore
 import psycopg
 from psycopg import sql
 
@@ -52,7 +53,6 @@ ACTIVE_PROFILE = _load_profile_env()
 DEFAULT_ENV = "dev"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_EMBEDDING_VECTOR_SIZE = 768
 ENV_LLM_DEFAULTS = {
     "dev": "llama3.2:3b",
     "prod": "llama3.1:8b",
@@ -73,9 +73,9 @@ class RuntimeSettings:
     postgres_url: str
     redis_url: str
     collection_name: str
+    chroma_persist_directory: str
     embedding_model: str
     embedding_batch_size: int
-    embedding_vector_size: int
     llm_model: str
     ollama_url: str
     jwt_secret_key: str
@@ -99,6 +99,10 @@ def _load_runtime_settings() -> RuntimeSettings:
         postgres_url=_first_env("POSTGRES_URL", "DATABASE_URL", default=postgres_url_default),
         redis_url=_first_env("REDIS_URL", default="redis://localhost:6379/0"),
         collection_name=_first_env("COLLECTION_NAME", default="pdf_docs"),
+        chroma_persist_directory=_first_env(
+            "CHROMA_PERSIST_DIRECTORY",
+            default="./chroma_data",
+        ),
         embedding_model=_first_env(
             "EMBEDDING_MODEL",
             default=DEFAULT_EMBEDDING_MODEL,
@@ -106,10 +110,6 @@ def _load_runtime_settings() -> RuntimeSettings:
         embedding_batch_size=max(
             1,
             int(_first_env("EMBEDDING_BATCH_SIZE", default="16")),
-        ),
-        embedding_vector_size=max(
-            1,
-            int(_first_env("EMBEDDING_VECTOR_SIZE", default=str(DEFAULT_EMBEDDING_VECTOR_SIZE))),
         ),
         llm_model=_first_env("LLM_MODEL", "OLLAMA_MODEL", default=llm_default),
         ollama_url=_first_env("OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default),
@@ -125,9 +125,9 @@ SETTINGS = _load_runtime_settings()
 POSTGRES_URL = SETTINGS.postgres_url
 REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
+CHROMA_PERSIST_DIRECTORY = SETTINGS.chroma_persist_directory
 EMBEDDING_MODEL = SETTINGS.embedding_model
 EMBEDDING_BATCH_SIZE = SETTINGS.embedding_batch_size
-EMBEDDING_VECTOR_SIZE = SETTINGS.embedding_vector_size
 OLLAMA_MODEL = SETTINGS.llm_model
 OLLAMA_BASE_URL = SETTINGS.ollama_url
 JWT_SECRET_KEY = SETTINGS.jwt_secret_key
@@ -138,8 +138,7 @@ OCR_LANGS = SETTINGS.ocr_languages
 # Singleton-like clients
 _embeddings = None
 _vectorstores = {}
-_pgvector_engine = None
-_initialized_vector_tables = set()
+_chroma_client = None
 
 
 class EmbeddingInitializationError(RuntimeError):
@@ -196,65 +195,13 @@ def shared_collection_name() -> str:
     )
 
 
-def _vector_table_name(name: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", name).strip("_").lower() or "default"
-    if not re.match(r"^[a-z_]", normalized):
-        normalized = f"v_{normalized}"
-    if len(normalized) <= 54:
-        return normalized
-    suffix = sha1(normalized.encode("utf-8")).hexdigest()[:8]
-    return f"{normalized[:45]}_{suffix}"
-
-
-def _pgvector_connection_url() -> str:
-    parsed = urlsplit(POSTGRES_URL)
-    scheme = parsed.scheme
-    if "+psycopg2" in scheme:
-        scheme = scheme.replace("+psycopg2", "+psycopg")
-    elif "+" not in scheme:
-        scheme = f"{scheme}+psycopg"
-    return urlunsplit(parsed._replace(scheme=scheme))
-
-
-def _database_connection_url() -> str:
-    parsed = urlsplit(POSTGRES_URL)
-    scheme = parsed.scheme.replace("+psycopg2", "").replace("+psycopg", "")
-    return urlunsplit(parsed._replace(scheme=scheme))
-
-
-def _get_pgvector_engine() -> PGEngine:
-    global _pgvector_engine
-    if _pgvector_engine is None:
-        _ensure_postgres_database_exists()
-        _pgvector_engine = PGEngine.from_connection_string(url=_pgvector_connection_url())
-    return _pgvector_engine
-
-
-def _vector_table_exists(table_name: str) -> bool:
-    with psycopg.connect(_database_connection_url()) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT to_regclass(%s)", (f"public.{table_name}",))
-            return cur.fetchone()[0] is not None
-
-
-def _ensure_vector_table(table_name: str) -> None:
-    if table_name in _initialized_vector_tables:
-        return
-    if not _vector_table_exists(table_name):
-        _get_pgvector_engine().init_vectorstore_table(
-            table_name=table_name,
-            vector_size=EMBEDDING_VECTOR_SIZE,
-        )
-    _initialized_vector_tables.add(table_name)
-
-
-def _drop_vector_table(table_name: str) -> None:
-    with psycopg.connect(_database_connection_url(), autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(table_name))
-            )
-    _initialized_vector_tables.discard(table_name)
+def _get_chroma_client() -> chromadb.PersistentClient:
+    global _chroma_client
+    if _chroma_client is None:
+        persist_directory = Path(CHROMA_PERSIST_DIRECTORY)
+        persist_directory.mkdir(parents=True, exist_ok=True)
+        _chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+    return _chroma_client
 
 
 def get_embeddings():
@@ -274,26 +221,26 @@ def get_embeddings():
     return _embeddings
 
 
-def get_vectorstore(collection_name: str | None = None) -> PGVectorStore:
+def get_vectorstore(collection_name: str | None = None) -> Chroma:
     resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
-    table_name = _vector_table_name(resolved_collection)
-    vectorstore = _vectorstores.get(table_name)
+    vectorstore = _vectorstores.get(resolved_collection)
     if vectorstore is None:
-        _ensure_vector_table(table_name)
-        vectorstore = PGVectorStore.create_sync(
-            engine=_get_pgvector_engine(),
-            table_name=table_name,
-            embedding_service=get_embeddings(),
+        vectorstore = Chroma(
+            client=_get_chroma_client(),
+            collection_name=resolved_collection,
+            embedding_function=get_embeddings(),
         )
-        _vectorstores[table_name] = vectorstore
+        _vectorstores[resolved_collection] = vectorstore
     return vectorstore
 
 
-def reset_vectorstore(collection_name: str | None = None) -> PGVectorStore:
+def reset_vectorstore(collection_name: str | None = None) -> Chroma:
     resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
-    table_name = _vector_table_name(resolved_collection)
-    _drop_vector_table(table_name)
-    _vectorstores.pop(table_name, None)
+    try:
+        _get_chroma_client().delete_collection(name=resolved_collection)
+    except Exception:
+        pass
+    _vectorstores.pop(resolved_collection, None)
     return get_vectorstore(resolved_collection)
 
 

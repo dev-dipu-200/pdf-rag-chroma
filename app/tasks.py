@@ -136,15 +136,15 @@ def index_pdf_document(document_id: int) -> dict:
             ocr_languages=OCR_LANGS,
         )
         vectorstore = get_vectorstore(shared_collection_name())
-        indexed_chunks, failures = _add_documents_in_batches(vectorstore, docs)
-        document.chunks_added = indexed_chunks
-        if indexed_chunks == 0:
-            _set_document_state(document, "failed", failures[0] if failures else "No chunks were indexed.")
+        indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
+        document.chunks_added = indexed_pages
+        if indexed_pages == 0:
+            _set_document_state(document, "failed", failures[0] if failures else "No pages were indexed.")
         elif failures:
             _set_document_state(
                 document,
                 "indexed",
-                f"Indexed {indexed_chunks}/{len(docs)} chunks. Skipped {len(docs) - indexed_chunks} chunk(s) due to Ollama embedding failures.",
+                f"Indexed {indexed_pages}/{len(docs)} pages. Skipped {len(docs) - indexed_pages} page(s) due to Ollama embedding failures.",
             )
         else:
             _set_document_state(document, "indexed")
@@ -152,8 +152,8 @@ def index_pdf_document(document_id: int) -> dict:
         return {
             "status": document.status,
             "document_id": document.id,
-            "chunks_added": indexed_chunks,
-            "skipped_chunks": len(docs) - indexed_chunks,
+            "chunks_added": indexed_pages,
+            "skipped_chunks": len(docs) - indexed_pages,
             "error": document.error_message,
         }
     except (EmbeddingInitializationError, ResponseError, ValueError, FileNotFoundError) as exc:
@@ -208,18 +208,18 @@ def reindex_user_documents(user_id: int) -> dict:
                     enable_ocr=ENABLE_OCR,
                     ocr_languages=OCR_LANGS,
                 )
-                indexed_chunks, failures = _add_documents_in_batches(vectorstore, docs)
-                document.chunks_added = indexed_chunks
-                total_chunks += indexed_chunks
-                if indexed_chunks == 0:
-                    _set_document_state(document, "failed", failures[0] if failures else "No chunks were indexed.")
+                indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
+                document.chunks_added = indexed_pages
+                total_chunks += indexed_pages
+                if indexed_pages == 0:
+                    _set_document_state(document, "failed", failures[0] if failures else "No pages were indexed.")
                 else:
                     total_indexed += 1
                     if failures:
                         _set_document_state(
                             document,
                             "indexed",
-                            f"Indexed {indexed_chunks}/{len(docs)} chunks. Skipped {len(docs) - indexed_chunks} chunk(s) due to Ollama embedding failures.",
+                            f"Indexed {indexed_pages}/{len(docs)} pages. Skipped {len(docs) - indexed_pages} page(s) due to Ollama embedding failures.",
                         )
                     else:
                         _set_document_state(document, "indexed")

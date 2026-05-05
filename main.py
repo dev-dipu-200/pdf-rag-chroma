@@ -10,7 +10,7 @@ settings = get_runtime_settings()
 
 app = FastAPI(
     title="Custom PDF Chatbot API",
-    description="Multi-user PDF chatbot with local Ollama, pgvector, and Celery ingestion.",
+    description="Multi-user PDF chatbot with local Ollama, ChromaDB, and Celery ingestion.",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -30,7 +30,8 @@ def health_check():
     return {
         "status": "ok",
         "environment": settings.env,
-        "vector_db": "Postgres pgvector",
+        "vector_db": "ChromaDB",
+        "vector_store_path": settings.chroma_persist_directory,
         "embedding_model": settings.embedding_model,
         "llm_provider": "Ollama",
         "llm_model": settings.llm_model,

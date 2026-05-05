@@ -8,27 +8,27 @@
         @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
 
         :root {
-            --bg: #f3efe7;
-            --canvas: #fbf8f2;
-            --panel: rgba(255, 255, 255, 0.74);
-            --panel-strong: rgba(255, 255, 255, 0.94);
-            --panel-soft: rgba(20, 38, 34, 0.045);
-            --line: rgba(42, 54, 45, 0.1);
-            --line-strong: rgba(42, 54, 45, 0.18);
-            --text: #18201c;
-            --muted: #6d736d;
-            --accent: #d26c41;
-            --accent-dark: #b85a33;
-            --accent-soft: rgba(210, 108, 65, 0.12);
-            --sage: #2f5e53;
-            --sage-soft: rgba(47, 94, 83, 0.08);
-            --assistant: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 245, 238, 0.98));
-            --user: linear-gradient(135deg, #23483f, #36695c);
-            --danger: #c94761;
-            --warn: #9f6f20;
-            --ok: #1f7a44;
-            --shadow-lg: 0 32px 70px rgba(88, 68, 42, 0.09);
-            --shadow-md: 0 18px 40px rgba(88, 68, 42, 0.08);
+            --bg: #0c1022;
+            --canvas: #161c33;
+            --panel: rgba(16, 22, 41, 0.7);
+            --panel-strong: rgba(21, 29, 52, 0.9);
+            --panel-soft: rgba(255, 255, 255, 0.05);
+            --line: rgba(194, 209, 255, 0.12);
+            --line-strong: rgba(194, 209, 255, 0.22);
+            --text: #eef3ff;
+            --muted: #9aa7c7;
+            --accent: #ff7a59;
+            --accent-dark: #df5b3f;
+            --accent-soft: rgba(255, 122, 89, 0.16);
+            --sage: #66c7b4;
+            --sage-soft: rgba(102, 199, 180, 0.1);
+            --assistant: linear-gradient(180deg, rgba(24, 32, 57, 0.96), rgba(17, 24, 46, 0.98));
+            --user: linear-gradient(135deg, #ff7a59, #ff4f88 55%, #ff9b54);
+            --danger: #ff5f7e;
+            --warn: #ffbd59;
+            --ok: #52d79c;
+            --shadow-lg: 0 32px 80px rgba(6, 10, 25, 0.38);
+            --shadow-md: 0 18px 44px rgba(6, 10, 25, 0.3);
         }
 
         * {
@@ -39,10 +39,10 @@
             margin: 0;
             min-height: 100vh;
             background:
-                radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 22%),
-                radial-gradient(circle at 85% 15%, rgba(210, 108, 65, 0.12), transparent 18%),
-                radial-gradient(circle at bottom right, rgba(47, 94, 83, 0.09), transparent 20%),
-                linear-gradient(135deg, #f5f0e7, #eee5d7 48%, #e9efe6);
+                radial-gradient(circle at 12% 18%, rgba(102, 199, 180, 0.2), transparent 20%),
+                radial-gradient(circle at 88% 14%, rgba(255, 122, 89, 0.22), transparent 18%),
+                radial-gradient(circle at 76% 78%, rgba(122, 92, 255, 0.18), transparent 22%),
+                linear-gradient(135deg, #0b1020, #151a31 42%, #17132b 72%, #0f1628);
             color: var(--text);
             font-family: "Manrope", "Segoe UI", sans-serif;
         }
@@ -60,7 +60,7 @@
             content: "";
             position: fixed;
             inset: 18px;
-            border: 1px solid rgba(80, 68, 44, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 36px;
             pointer-events: none;
         }
@@ -75,6 +75,7 @@
             flex-direction: column;
             gap: 16px;
             position: relative;
+            padding: 12px 0;
         }
 
         .main {
@@ -89,13 +90,13 @@
             border-radius: 28px;
             box-shadow:
                 var(--shadow-lg),
-                inset 0 1px 0 rgba(255, 255, 255, 0.5);
+                inset 0 1px 0 rgba(255, 255, 255, 0.08);
             overflow: hidden;
             backdrop-filter: blur(22px);
         }
 
         .panel:hover {
-            border-color: rgba(201, 109, 68, 0.22);
+            border-color: rgba(255, 122, 89, 0.28);
         }
 
         .panel-header {
@@ -148,20 +149,20 @@
             padding: 15px 16px;
             font: inherit;
             color: var(--text);
-            background: rgba(255, 255, 255, 0.82);
+            background: rgba(255, 255, 255, 0.06);
         }
 
         input::placeholder,
         textarea::placeholder {
-            color: rgba(31, 36, 31, 0.4);
+            color: rgba(238, 243, 255, 0.38);
         }
 
         input:focus,
         textarea:focus,
         select:focus {
             outline: none;
-            border-color: rgba(201, 109, 68, 0.5);
-            box-shadow: 0 0 0 4px rgba(201, 109, 68, 0.12);
+            border-color: rgba(255, 122, 89, 0.55);
+            box-shadow: 0 0 0 4px rgba(255, 122, 89, 0.14);
         }
 
         textarea {
@@ -171,18 +172,22 @@
 
         button {
             cursor: pointer;
-            background: linear-gradient(135deg, var(--accent), #d9895b);
+            background: linear-gradient(135deg, #ff7a59, #ff4f88 58%, #ff9b54);
             color: #fff;
             border: none;
             font-weight: 700;
             letter-spacing: 0.01em;
             transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-            box-shadow: 0 12px 26px rgba(201, 109, 68, 0.24);
+            box-shadow: 0 14px 30px rgba(255, 95, 126, 0.28);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 18px 34px rgba(201, 109, 68, 0.26);
+            box-shadow: 0 20px 38px rgba(255, 95, 126, 0.34);
         }
 
         button:disabled {
@@ -193,20 +198,20 @@
         }
 
         button.secondary {
-            background: rgba(47, 94, 83, 0.1);
+            background: linear-gradient(135deg, rgba(102, 199, 180, 0.14), rgba(122, 92, 255, 0.14));
             color: var(--text);
             box-shadow: none;
         }
 
         button.ghost {
-            background: rgba(255, 255, 255, 0.52);
-            color: #415049;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--muted);
             border: 1px solid rgba(42, 54, 45, 0.12);
             box-shadow: none;
         }
 
         button.danger {
-            background: linear-gradient(135deg, var(--danger), #d96276);
+            background: linear-gradient(135deg, #ff5f7e, #ff7a59);
             color: #fff;
         }
 
@@ -249,10 +254,36 @@
             gap: 8px;
             padding: 12px 15px;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.75);
+            background: rgba(255, 255, 255, 0.08);
             color: var(--text);
             font-size: 0.9rem;
             border: 1px solid var(--line);
+        }
+
+        .title-with-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .icon {
+            width: 1rem;
+            height: 1rem;
+            flex: 0 0 auto;
+        }
+
+        .icon-lg {
+            width: 1.15rem;
+            height: 1.15rem;
+        }
+
+        .icon-xl {
+            width: 1.4rem;
+            height: 1.4rem;
+        }
+
+        .muted-icon {
+            color: var(--muted);
         }
 
         .list {
@@ -266,12 +297,12 @@
 
         .item {
             border: 1px solid var(--line);
-            background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(251,247,241,0.94));
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
             border-radius: 22px;
             padding: 16px 16px;
             position: relative;
             overflow: hidden;
-            box-shadow: 0 10px 24px rgba(91, 69, 40, 0.05);
+            box-shadow: 0 10px 24px rgba(8, 12, 27, 0.18);
         }
 
         .item::before {
@@ -279,7 +310,7 @@
             position: absolute;
             inset: 0 auto 0 0;
             width: 4px;
-            background: linear-gradient(180deg, rgba(49, 94, 83, 0.88), rgba(201, 109, 68, 0.88));
+            background: linear-gradient(180deg, #66c7b4, #7a5cff 55%, #ff7a59);
             opacity: 0.8;
         }
 
@@ -309,8 +340,8 @@
             gap: 6px;
             padding: 6px 10px;
             border-radius: 999px;
-            background: rgba(49, 94, 83, 0.06);
-            border: 1px solid rgba(49, 94, 83, 0.08);
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.06);
             color: var(--muted);
             font-size: 0.75rem;
             letter-spacing: 0.04em;
@@ -339,7 +370,7 @@
             padding: 4px 8px;
             border-radius: 999px;
             background: var(--accent-soft);
-            color: #9e4f2e;
+            color: #ffd7cc;
             font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 0.12em;
@@ -352,23 +383,23 @@
             border-radius: 999px;
             font-size: 0.72rem;
             font-weight: 700;
-            background: rgba(49, 94, 83, 0.08);
+            background: rgba(255,255,255,0.08);
             color: var(--text);
         }
 
         .badge.indexed {
-            background: rgba(31, 122, 68, 0.13);
-            color: #1f7a44;
+            background: rgba(82, 215, 156, 0.12);
+            color: #8ef0c0;
         }
 
         .badge.failed {
-            background: rgba(197, 63, 86, 0.12);
-            color: #b43c52;
+            background: rgba(255, 95, 126, 0.14);
+            color: #ffafbe;
         }
 
         .badge.indexing,
         .badge.pending {
-            background: rgba(157, 107, 29, 0.12);
+            background: rgba(255, 189, 89, 0.14);
             color: var(--warn);
         }
 
@@ -377,8 +408,9 @@
             grid-template-rows: auto 1fr auto;
             min-height: calc(100vh - 36px);
             background:
-                radial-gradient(circle at top right, rgba(210, 108, 65, 0.08), transparent 22%),
-                linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(248, 244, 238, 0.98));
+                radial-gradient(circle at top right, rgba(255, 122, 89, 0.12), transparent 22%),
+                radial-gradient(circle at 18% 12%, rgba(102, 199, 180, 0.09), transparent 16%),
+                linear-gradient(180deg, rgba(16, 22, 41, 0.84), rgba(13, 19, 36, 0.94));
             position: relative;
             box-shadow: var(--shadow-lg);
         }
@@ -390,7 +422,7 @@
             top: 26px;
             width: 140px;
             height: 140px;
-            background: radial-gradient(circle, rgba(49, 94, 83, 0.1), transparent 68%);
+            background: radial-gradient(circle, rgba(122, 92, 255, 0.18), transparent 68%);
             pointer-events: none;
         }
 
@@ -436,9 +468,9 @@
             padding: 13px 15px;
             border-radius: 18px;
             border: 1px solid var(--line);
-            background: rgba(255,255,255,0.72);
+            background: linear-gradient(135deg, rgba(102, 199, 180, 0.12), rgba(122, 92, 255, 0.12));
             backdrop-filter: blur(8px);
-            box-shadow: 0 10px 22px rgba(91, 69, 40, 0.05);
+            box-shadow: 0 10px 22px rgba(8, 12, 27, 0.16);
         }
 
         .metric-value {
@@ -464,7 +496,7 @@
             padding: 8px 12px;
             border: 1px solid var(--line);
             border-radius: 999px;
-            background: rgba(255,255,255,0.78);
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
             color: var(--muted);
             font-size: 0.78rem;
             letter-spacing: 0.08em;
@@ -486,7 +518,7 @@
 
         .chat-body::-webkit-scrollbar-thumb,
         .list::-webkit-scrollbar-thumb {
-            background: rgba(49, 94, 83, 0.18);
+            background: rgba(255,255,255,0.16);
             border-radius: 999px;
         }
 
@@ -526,7 +558,7 @@
 
         .message.assistant::before {
             content: "Assistant";
-            color: #6e7f73;
+            color: #9ecaf1;
         }
 
         .message.user::before {
@@ -543,7 +575,7 @@
         .composer {
             border-top: 1px solid var(--line);
             padding: 22px 28px 28px;
-            background: rgba(255, 249, 242, 0.84);
+            background: linear-gradient(180deg, rgba(16, 22, 41, 0.86), rgba(15, 20, 37, 0.96));
             display: grid;
             gap: 12px;
         }
@@ -569,7 +601,7 @@
             border: 1px dashed var(--line-strong);
             border-radius: 24px;
             color: var(--muted);
-            background: linear-gradient(180deg, rgba(255,255,255,0.84), rgba(249,245,239,0.9));
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
         }
 
         .brand-block {
@@ -584,7 +616,7 @@
             height: 180px;
             right: -40px;
             top: -60px;
-            background: radial-gradient(circle, rgba(201, 109, 68, 0.18), transparent 72%);
+            background: radial-gradient(circle, rgba(255, 122, 89, 0.24), transparent 72%);
             pointer-events: none;
         }
 
@@ -594,11 +626,10 @@
             border-radius: 20px;
             display: grid;
             place-items: center;
-            font-size: 1.2rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, rgba(201, 109, 68, 0.18), rgba(49, 94, 83, 0.18));
-            border: 1px solid rgba(49, 94, 83, 0.1);
+            background: linear-gradient(135deg, rgba(255, 122, 89, 0.18), rgba(122, 92, 255, 0.18), rgba(102, 199, 180, 0.18));
+            border: 1px solid rgba(255,255,255,0.08);
             margin-bottom: 16px;
+            color: #fff;
         }
 
         .sidebar-summary {
@@ -610,9 +641,9 @@
         .summary-tile {
             padding: 14px 14px 12px;
             border-radius: 18px;
-            background: rgba(255, 255, 255, 0.7);
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.04));
             border: 1px solid var(--line);
-            box-shadow: 0 10px 24px rgba(91, 69, 40, 0.05);
+            box-shadow: 0 10px 24px rgba(8, 12, 27, 0.15);
         }
 
         .summary-value {
@@ -682,22 +713,83 @@
     </style>
 </head>
 <body>
+    <svg width="0" height="0" style="position:absolute;visibility:hidden" aria-hidden="true" focusable="false">
+        <symbol id="icon-shield" viewBox="0 0 24 24">
+            <path d="M12 3l7 3v6c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V6l7-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-lock" viewBox="0 0 24 24">
+            <rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M8 11V8a4 4 0 1 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-upload" viewBox="0 0 24 24">
+            <path d="M12 16V5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="m8 9 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24">
+            <path d="M20 6v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 18v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7.5 9A7 7 0 0 1 19 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M16.5 15A7 7 0 0 1 5 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-file" viewBox="0 0 24 24">
+            <path d="M8 3h6l5 5v13H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M14 3v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-history" viewBox="0 0 24 24">
+            <path d="M3 12a9 9 0 1 0 3-6.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M3 4v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 8v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-plus" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-trash" viewBox="0 0 24 24">
+            <path d="M4 7h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-search" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="m16 16 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-send" viewBox="0 0 24 24">
+            <path d="M4 12 20 4l-4 16-4.5-5.5L4 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M20 4 11.5 14.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </symbol>
+        <symbol id="icon-chat" viewBox="0 0 24 24">
+            <path d="M6 18 3 21V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-database" viewBox="0 0 24 24">
+            <ellipse cx="12" cy="6" rx="7" ry="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        </symbol>
+        <symbol id="icon-spark" viewBox="0 0 24 24">
+            <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </symbol>
+        <symbol id="icon-open" viewBox="0 0 24 24">
+            <path d="M14 5h5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M10 14 19 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        </symbol>
+    </svg>
     <div class="shell">
         <aside class="sidebar">
             <div class="panel brand-block">
                 <div class="panel-header">
-                    <div class="brand-mark">AD</div>
+                    <div class="brand-mark"><svg class="icon icon-xl"><use href="#icon-spark"></use></svg></div>
                     <h1>Archive Desk</h1>
                     <p class="subtle">A modern retrieval workspace for PDF knowledge, OCR fallback, shared embeddings, and private conversations.</p>
                 </div>
                 <div class="panel-body stack">
                     <div class="sidebar-summary">
                         <div class="summary-tile">
-                            <span class="summary-value">Shared</span>
+                            <span class="summary-value"><span class="title-with-icon"><svg class="icon"><use href="#icon-database"></use></svg>Shared</span></span>
                             <span class="summary-label">Knowledge Base</span>
                         </div>
                         <div class="summary-tile">
-                            <span class="summary-value">Private</span>
+                            <span class="summary-value"><span class="title-with-icon"><svg class="icon"><use href="#icon-lock"></use></svg>Private</span></span>
                             <span class="summary-label">Chat Sessions</span>
                         </div>
                     </div>
@@ -710,7 +802,7 @@
 
             <div class="panel" id="authPanel">
                 <div class="panel-header">
-                    <h2>Access</h2>
+                    <h2 class="title-with-icon"><svg class="icon muted-icon"><use href="#icon-shield"></use></svg>Access</h2>
                     <p class="section-note">Sign in to ask questions from the shared knowledge base or manage uploads as admin.</p>
                 </div>
                 <div class="panel-body stack">
@@ -719,23 +811,23 @@
                         <input id="passwordInput" type="password" placeholder="Password">
                     </div>
                     <div class="inline">
-                        <button id="loginButton">Login</button>
-                        <button id="registerButton" class="secondary">Register</button>
+                        <button id="loginButton"><svg class="icon"><use href="#icon-lock"></use></svg>Login</button>
+                        <button id="registerButton" class="secondary"><svg class="icon"><use href="#icon-plus"></use></svg>Register</button>
                     </div>
                 </div>
             </div>
 
             <div class="panel" id="uploadPanel" style="display:none;">
                 <div class="panel-header">
-                    <h2>Admin Uploads</h2>
+                    <h2 class="title-with-icon"><svg class="icon muted-icon"><use href="#icon-upload"></use></svg>Admin Uploads</h2>
                     <p class="section-note">Add PDFs to the shared vector knowledge base for all users.</p>
                 </div>
                 <div class="panel-body stack">
                     <div class="upload-grid">
                         <input id="pdfInput" type="file" accept="application/pdf">
                         <div class="inline">
-                            <button id="uploadButton">Queue PDFs</button>
-                            <button id="reindexButton" class="secondary">Reindex All</button>
+                            <button id="uploadButton"><svg class="icon"><use href="#icon-upload"></use></svg>Queue PDFs</button>
+                            <button id="reindexButton" class="secondary"><svg class="icon"><use href="#icon-refresh"></use></svg>Reindex All</button>
                         </div>
                     </div>
                     <div class="status" id="uploadStatus"></div>
@@ -744,7 +836,7 @@
 
             <div class="panel" id="documentsPanel" style="display:none;">
                 <div class="panel-header">
-                    <h2>Knowledge Base</h2>
+                    <h2 class="title-with-icon"><svg class="icon muted-icon"><use href="#icon-file"></use></svg>Knowledge Base</h2>
                     <p class="section-note">Track indexing status and chunk coverage for shared documents.</p>
                 </div>
                 <div class="panel-body">
@@ -754,13 +846,13 @@
 
             <div class="panel" id="sessionsPanel" style="display:none;">
                 <div class="panel-header">
-                    <h2>Your History</h2>
-                    <p class="section-note">Sessions are private per user, even though retrieval uses the shared PDF store.</p>
+                    <h2 class="title-with-icon"><svg class="icon muted-icon"><use href="#icon-history"></use></svg>Your History</h2>
+                    <p class="section-note">Sessions stay private per user while retrieval reads from the shared ChromaDB PDF store.</p>
                 </div>
                 <div class="panel-body stack">
                     <div class="inline wrap">
-                        <button id="newChatButton" class="ghost">Start New Chat</button>
-                        <button id="deleteAllChatsButton" class="danger">Delete All Chats</button>
+                        <button id="newChatButton" class="ghost"><svg class="icon"><use href="#icon-plus"></use></svg>Start New Chat</button>
+                        <button id="deleteAllChatsButton" class="danger"><svg class="icon"><use href="#icon-trash"></use></svg>Delete All Chats</button>
                     </div>
                     <div id="sessionsList" class="list"></div>
                 </div>
@@ -771,25 +863,25 @@
             <section class="panel chat-panel">
                 <div class="chat-header">
                     <div class="chat-header-copy hero-stack">
-                        <h2>Conversational Search</h2>
+                        <h2 class="title-with-icon"><svg class="icon muted-icon"><use href="#icon-search"></use></svg>Conversational Search</h2>
                         <h3 class="headline-title">Ask the archive like it is already indexed in your head.</h3>
                         <p class="subtle headline-sub" id="chatHeadline">Login first, then ask questions from the shared PDF knowledge base.</p>
                         <div class="hero-metrics">
                             <div class="metric-card">
-                                <span class="metric-value">Shared</span>
+                                <span class="metric-value"><span class="title-with-icon"><svg class="icon"><use href="#icon-database"></use></svg>Shared</span></span>
                                 <span class="metric-label">Vector Store</span>
                             </div>
                             <div class="metric-card">
-                                <span class="metric-value">OCR</span>
+                                <span class="metric-value"><span class="title-with-icon"><svg class="icon"><use href="#icon-spark"></use></svg>OCR</span></span>
                                 <span class="metric-label">Page Fallback</span>
                             </div>
                             <div class="metric-card">
-                                <span class="metric-value">Private</span>
+                                <span class="metric-value"><span class="title-with-icon"><svg class="icon"><use href="#icon-lock"></use></svg>Private</span></span>
                                 <span class="metric-label">Chat History</span>
                             </div>
                         </div>
                     </div>
-                    <div class="hero-chip">Ollama + pgvector + OCR fallback</div>
+                    <div class="hero-chip"><svg class="icon"><use href="#icon-chat"></use></svg>Ollama + ChromaDB + OCR fallback</div>
                 </div>
 
                 <div id="chatBody" class="chat-body">
@@ -800,7 +892,7 @@
                     <div class="composer-grid">
                         <textarea id="questionInput" placeholder="Ask a question from the PDF knowledge base..." disabled></textarea>
                         <input id="topKInput" type="number" min="1" max="15" value="5" disabled>
-                        <button id="sendButton" type="submit" disabled>Ask</button>
+                        <button id="sendButton" type="submit" disabled><svg class="icon"><use href="#icon-send"></use></svg>Ask</button>
                     </div>
                     <div class="composer-note">
                         <span>Ask for summaries, facts, extracted figures, or Hindi and English context from uploaded PDFs.</span>
@@ -836,6 +928,10 @@
         const topKInput = document.getElementById("topKInput");
         const sendButton = document.getElementById("sendButton");
         const deleteAllChatsButton = document.getElementById("deleteAllChatsButton");
+
+        function icon(name, className = "icon") {
+            return `<svg class="${className}" aria-hidden="true"><use href="#icon-${name}"></use></svg>`;
+        }
 
         function isAdmin() {
             return state.user?.role === "admin";
@@ -891,8 +987,8 @@
         function renderAuthState() {
             if (state.user) {
                 userState.innerHTML = `
-                    <div class="user-pill">Logged in as <strong>${state.user.username}</strong><span class="role-tag">${state.user.role}</span></div>
-                    <button id="logoutButton" class="secondary">Logout</button>
+                    <div class="user-pill">${icon("shield")}Logged in as <strong>${state.user.username}</strong><span class="role-tag">${state.user.role}</span></div>
+                    <button id="logoutButton" class="secondary">${icon("lock")}Logout</button>
                 `;
                 authPanel.style.display = "none";
                 uploadPanel.style.display = isAdmin() ? "" : "none";
@@ -906,7 +1002,7 @@
                     : "Ask questions from the admin-managed knowledge base. Only your own chat history is shown here.";
                 document.getElementById("logoutButton").addEventListener("click", logout);
             } else {
-                userState.innerHTML = `<div class="user-pill">Not logged in</div>`;
+                userState.innerHTML = `<div class="user-pill">${icon("lock")}Not logged in</div>`;
                 authPanel.style.display = "";
                 uploadPanel.style.display = "none";
                 documentsPanel.style.display = "none";
@@ -929,10 +1025,10 @@
             documentsList.innerHTML = documents.map((doc) => `
                 <div class="item">
                     <div class="item-grid">
-                        <div class="item-title">${doc.original_filename}</div>
+                        <div class="item-title title-with-icon">${icon("file")} ${doc.original_filename}</div>
                         <div class="item-meta-row">
                             <div class="badge ${doc.status}">${doc.status}</div>
-                            <div class="meta-pill">Chunks ${doc.chunks_added}</div>
+                            <div class="meta-pill">${icon("database")}Chunks ${doc.chunks_added}</div>
                         </div>
                         ${doc.error_message ? `<div class="meta item-copy" style="color: var(--danger);">${doc.error_message}</div>` : ""}
                     </div>
@@ -949,14 +1045,14 @@
             sessionsList.innerHTML = sessions.map((session) => `
                 <div class="item">
                     <div class="item-grid">
-                        <div class="item-title">${session.title}</div>
+                        <div class="item-title title-with-icon">${icon("chat")} ${session.title}</div>
                         <div class="item-meta-row">
-                            <div class="meta-pill">Session #${session.id}</div>
-                            <div class="meta-pill">${new Date(session.updated_at).toLocaleString()}</div>
+                            <div class="meta-pill">${icon("history")}Session #${session.id}</div>
+                            <div class="meta-pill">${icon("refresh")} ${new Date(session.updated_at).toLocaleString()}</div>
                         </div>
                         <div class="item-actions">
-                            <button class="secondary" data-open-session-id="${session.id}">Open</button>
-                            <button class="danger" data-delete-session-id="${session.id}">Delete</button>
+                            <button class="secondary" data-open-session-id="${session.id}">${icon("open")}Open</button>
+                            <button class="danger" data-delete-session-id="${session.id}">${icon("trash")}Delete</button>
                         </div>
                     </div>
                 </div>
