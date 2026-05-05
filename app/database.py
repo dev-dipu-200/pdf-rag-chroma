@@ -56,11 +56,29 @@ async def _ensure_user_role_column() -> None:
         )
 
 
+async def _ensure_anonymous_query_usage_table() -> None:
+    async with async_engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS anonymous_query_usage (
+                    id SERIAL PRIMARY KEY,
+                    ip_address VARCHAR(128) NOT NULL UNIQUE,
+                    query_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        )
+
+
 async def init_db() -> None:
     await _ensure_postgres_database_exists()
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _ensure_user_role_column()
+    await _ensure_anonymous_query_usage_table()
 
 
 async def get_db():

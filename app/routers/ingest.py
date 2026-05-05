@@ -3,15 +3,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
+import math
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import PdfDocument, User
-from app.schemas import IngestResponse, PdfDocumentResponse, ReindexResponse
+from app.schemas import IngestResponse, PdfDocumentResponse, ReindexResponse, PaginatedPdfDocumentsResponse
 from app.tasks import index_pdf_document, reindex_user_documents
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -111,18 +112,39 @@ async def upload_pdf(
     )
 
 
-@router.get("/documents", response_model=list[PdfDocumentResponse])
+@router.get("/documents", response_model=PaginatedPdfDocumentsResponse)
 async def list_documents(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=1, le=100),
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
+    # Get total count
+    count_stmt = select(func.count()).select_from(PdfDocument).filter(PdfDocument.user_id == current_user.id)
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    # Get paginated items
+    skip = (page - 1) * size
+    stmt = (
         select(PdfDocument)
         .filter(PdfDocument.user_id == current_user.id)
         .order_by(PdfDocument.created_at.desc())
+        .offset(skip)
+        .limit(size)
     )
+    result = await db.execute(stmt)
     documents = result.scalars().all()
-    return [_serialize_document(document) for document in documents]
+    
+    pages = math.ceil(total / size) if total > 0 else 1
+    
+    return PaginatedPdfDocumentsResponse(
+        items=[_serialize_document(doc) for doc in documents],
+        total=total,
+        page=page,
+        pages=pages,
+        size=size
+    )
 
 
 @router.post("/reindex", response_model=ReindexResponse)

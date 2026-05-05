@@ -59,6 +59,16 @@ class ChatMessage(Base):
     session = relationship("ChatSession", back_populates="messages")
 
 
+class AnonymousQueryUsage(Base):
+    __tablename__ = "anonymous_query_usage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(128), unique=True, nullable=False, index=True)
+    query_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class PdfDocument(Base):
     __tablename__ = "pdf_documents"
     __table_args__ = (

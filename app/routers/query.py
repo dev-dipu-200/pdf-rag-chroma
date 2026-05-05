@@ -2,13 +2,13 @@ import json
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from ollama import ResponseError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.auth import get_current_user, get_user_chat_session
+from app.auth import get_current_user, get_optional_user, get_user_chat_session
 from app.database import AsyncSessionLocal, get_db
 from app.dependencies import (
     EmbeddingInitializationError,
@@ -16,7 +16,7 @@ from app.dependencies import (
     get_vectorstore,
     shared_collection_name,
 )
-from app.models import ChatMessage, ChatSession, PdfDocument, User
+from app.models import AnonymousQueryUsage, ChatMessage, ChatSession, PdfDocument, User
 from app.schemas import (
     ChatMessageResponse,
     ChatSessionResponse,
@@ -28,6 +28,7 @@ from app.services.rag import build_answer_chain, format_docs
 
 router = APIRouter(prefix="/query", tags=["query"])
 logger = logging.getLogger(__name__)
+ANONYMOUS_QUERY_LIMIT = 3
 
 
 def _serialize_session(session: ChatSession) -> ChatSessionResponse:
@@ -140,6 +141,54 @@ async def _save_message(db: AsyncSession, user_id: int, session_id: int, role: s
     await db.commit()
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else "unknown"
+
+
+async def _consume_anonymous_query(request: Request, db: AsyncSession) -> int:
+    client_ip = _get_client_ip(request)
+    result = await db.execute(
+        select(AnonymousQueryUsage).filter(AnonymousQueryUsage.ip_address == client_ip)
+    )
+    usage = result.scalar_one_or_none()
+    if usage is None:
+        usage = AnonymousQueryUsage(
+            ip_address=client_ip,
+            query_count=1,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(usage)
+        await db.commit()
+        return ANONYMOUS_QUERY_LIMIT - usage.query_count
+
+    if usage.query_count >= ANONYMOUS_QUERY_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Free query limit reached for this IP. Please log in to continue chatting.",
+        )
+
+    usage.query_count += 1
+    usage.updated_at = datetime.utcnow()
+    await db.commit()
+    return ANONYMOUS_QUERY_LIMIT - usage.query_count
+
+
+async def _authorize_query(
+    request: Request,
+    db: AsyncSession,
+    current_user: User | None,
+) -> int | None:
+    if current_user is not None:
+        return None
+    return await _consume_anonymous_query(request, db)
+
+
 @router.get("/sessions", response_model=list[ChatSessionResponse])
 async def list_chat_sessions(
     current_user: User = Depends(get_current_user),
@@ -210,12 +259,16 @@ async def delete_all_chat_sessions(
 @router.post("", response_model=QueryResponse)
 async def ask_question(
     req: QueryRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_indexed_documents(db)
-    session = await _get_or_create_session(db, current_user, req.session_id, req.question)
-    await _save_message(db, current_user.id, session.id, "user", req.question)
+    anonymous_remaining = await _authorize_query(request, db, current_user)
+    session = None
+    if current_user is not None:
+        session = await _get_or_create_session(db, current_user, req.session_id, req.question)
+        await _save_message(db, current_user.id, session.id, "user", req.question)
 
     try:
         _, sources, context = await _get_sources_and_context(req.question, req.top_k or 5)
@@ -238,24 +291,30 @@ async def ask_question(
         logger.warning("Ollama query failed: %s", exc)
         raise HTTPException(status_code=503, detail=f"Ollama query failed: {exc}") from exc
 
-    await _save_message(db, current_user.id, session.id, "assistant", answer, sources)
+    if current_user is not None and session is not None:
+        await _save_message(db, current_user.id, session.id, "assistant", answer, sources)
     return QueryResponse(
         answer=answer,
         sources=sources,
         provider="ollama",
-        session_id=session.id,
+        session_id=session.id if session is not None else None,
+        anonymous_remaining=anonymous_remaining,
     )
 
 
 @router.post("/stream")
 async def stream_answer(
     req: QueryRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_indexed_documents(db)
-    session = await _get_or_create_session(db, current_user, req.session_id, req.question)
-    await _save_message(db, current_user.id, session.id, "user", req.question)
+    anonymous_remaining = await _authorize_query(request, db, current_user)
+    session = None
+    if current_user is not None:
+        session = await _get_or_create_session(db, current_user, req.session_id, req.question)
+        await _save_message(db, current_user.id, session.id, "user", req.question)
 
     try:
         _, sources, context = await _get_sources_and_context(req.question, req.top_k or 5)
@@ -278,7 +337,8 @@ async def stream_answer(
                 "type": "meta",
                 "sources": sources,
                 "provider": "ollama",
-                "session_id": session.id,
+                "session_id": session.id if session is not None else None,
+                "anonymous_remaining": anonymous_remaining,
             }
         )
         try:
@@ -297,15 +357,17 @@ async def stream_answer(
                 yield _ndjson_line({"type": "start", "provider": "ollama"})
 
             answer = "".join(answer_parts).strip()
-            async with AsyncSessionLocal() as history_db:
-                await _save_message(history_db, current_user.id, session.id, "assistant", answer, sources)
+            if current_user is not None and session is not None:
+                async with AsyncSessionLocal() as history_db:
+                    await _save_message(history_db, current_user.id, session.id, "assistant", answer, sources)
 
             yield _ndjson_line(
                 {
                     "type": "done",
                     "provider": "ollama",
                     "sources": sources,
-                    "session_id": session.id,
+                    "session_id": session.id if session is not None else None,
+                    "anonymous_remaining": anonymous_remaining,
                 }
             )
         except Exception as exc:

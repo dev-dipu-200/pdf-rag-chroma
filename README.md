@@ -142,7 +142,7 @@ Services:
 
 ## Main flow
 
-1. Register or log in.
+1. Create the initial admin with `POST /auth/register`, or register a normal user from the UI.
 2. The API returns a bearer token.
 3. The UI sends `Authorization: Bearer <token>` on protected requests.
 4. Upload a PDF.
@@ -163,6 +163,8 @@ Services:
 ## API endpoints
 
 - `POST /auth/register`
+- `POST /auth/register-ui`
+- `POST /auth/register-admin`
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`
@@ -178,6 +180,9 @@ Services:
 ## Current behavior
 
 - Each user has a separate chat history.
+- The first backend registration through `POST /auth/register` creates the initial `admin`.
+- UI registration through `POST /auth/register-ui` always creates a `user` after an admin already exists.
+- Additional admin accounts can be created only by an authenticated admin through `POST /auth/register-admin`.
 - Retrieval reads from the shared ChromaDB PDF collection.
 - PDF ingestion is asynchronous through Celery.
 - Reindex drops and rebuilds the shared ChromaDB collection.

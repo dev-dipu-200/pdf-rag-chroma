@@ -13,6 +13,7 @@ class QueryResponse(BaseModel):
     sources: List[str] = Field(default_factory=list)
     provider: Optional[str] = None
     session_id: Optional[int] = None
+    anonymous_remaining: Optional[int] = None
 
 class AuthRequest(BaseModel):
     username: str
@@ -69,3 +70,10 @@ class IngestResponse(BaseModel):
 class ReindexResponse(BaseModel):
     queued_documents: int
     status: str
+
+class PaginatedPdfDocumentsResponse(BaseModel):
+    items: List[PdfDocumentResponse]
+    total: int
+    page: int
+    pages: int
+    size: int
