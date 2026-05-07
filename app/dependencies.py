@@ -5,7 +5,9 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 from dotenv import load_dotenv
+import httpx
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 from langchain_ollama import OllamaLLM
@@ -73,11 +75,20 @@ class RuntimeSettings:
     postgres_url: str
     redis_url: str
     collection_name: str
+    llm_provider: str
+    embedding_provider: str
     chroma_persist_directory: str
+    chroma_api_key: str
+    chroma_tenant: str
+    chroma_database: str
     embedding_model: str
     embedding_batch_size: int
     llm_model: str
     ollama_url: str
+    public_api_key: str
+    public_api_base_url: str
+    public_llm_base_url: str
+    public_embedding_base_url: str
     jwt_secret_key: str
     access_token_expire_minutes: int
     enable_ocr: bool
@@ -99,10 +110,15 @@ def _load_runtime_settings() -> RuntimeSettings:
         postgres_url=_first_env("POSTGRES_URL", "DATABASE_URL", default=postgres_url_default),
         redis_url=_first_env("REDIS_URL", default="redis://localhost:6379/0"),
         collection_name=_first_env("COLLECTION_NAME", default="pdf_docs"),
+        llm_provider=_first_env("LLM_PROVIDER", default="ollama").lower(),
+        embedding_provider=_first_env("EMBEDDING_PROVIDER", default=_first_env("LLM_PROVIDER", default="ollama")).lower(),
         chroma_persist_directory=_first_env(
             "CHROMA_PERSIST_DIRECTORY",
             default="./chroma_data",
         ),
+        chroma_api_key=_first_env("CHROMA_API_KEY", default=""),
+        chroma_tenant=_first_env("CHROMA_TENANT", default=""),
+        chroma_database=_first_env("CHROMA_DATABASE", default=""),
         embedding_model=_first_env(
             "EMBEDDING_MODEL",
             default=DEFAULT_EMBEDDING_MODEL,
@@ -113,6 +129,10 @@ def _load_runtime_settings() -> RuntimeSettings:
         ),
         llm_model=_first_env("LLM_MODEL", "OLLAMA_MODEL", default=llm_default),
         ollama_url=_first_env("OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default),
+        public_api_key=_first_env("PUBLIC_API_KEY", "OPENAI_API_KEY", default=""),
+        public_api_base_url=_first_env("PUBLIC_API_BASE_URL", default=""),
+        public_llm_base_url=_first_env("PUBLIC_LLM_BASE_URL", "OPENAI_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
+        public_embedding_base_url=_first_env("PUBLIC_EMBEDDING_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
         jwt_secret_key=_first_env("JWT_SECRET_KEY", default="change-me-in-production"),
         access_token_expire_minutes=int(_first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")),
         enable_ocr=_first_env("ENABLE_OCR", default="false").lower() in {"1", "true", "yes", "on"},
@@ -142,11 +162,20 @@ def get_sync_postgres_url() -> str:
     return url
 REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
+LLM_PROVIDER = SETTINGS.llm_provider
+EMBEDDING_PROVIDER = SETTINGS.embedding_provider
 CHROMA_PERSIST_DIRECTORY = SETTINGS.chroma_persist_directory
+CHROMA_API_KEY = SETTINGS.chroma_api_key
+CHROMA_TENANT = SETTINGS.chroma_tenant
+CHROMA_DATABASE = SETTINGS.chroma_database
 EMBEDDING_MODEL = SETTINGS.embedding_model
 EMBEDDING_BATCH_SIZE = SETTINGS.embedding_batch_size
 OLLAMA_MODEL = SETTINGS.llm_model
 OLLAMA_BASE_URL = SETTINGS.ollama_url
+PUBLIC_API_KEY = SETTINGS.public_api_key
+PUBLIC_API_BASE_URL = SETTINGS.public_api_base_url
+PUBLIC_LLM_BASE_URL = SETTINGS.public_llm_base_url
+PUBLIC_EMBEDDING_BASE_URL = SETTINGS.public_embedding_base_url
 JWT_SECRET_KEY = SETTINGS.jwt_secret_key
 ACCESS_TOKEN_EXPIRE_MINUTES = SETTINGS.access_token_expire_minutes
 ENABLE_OCR = SETTINGS.enable_ocr
@@ -160,6 +189,46 @@ _chroma_client = None
 
 class EmbeddingInitializationError(RuntimeError):
     pass
+
+
+def _normalize_public_base_url(base_url: str, endpoint: str) -> str:
+    cleaned = base_url.rstrip("/")
+    if not cleaned:
+        raise EmbeddingInitializationError(
+            f"Missing public API base URL for {endpoint}. Set PUBLIC_API_BASE_URL or provider-specific base URLs."
+        )
+    if cleaned.endswith(endpoint):
+        return cleaned
+    return f"{cleaned}/{endpoint}"
+
+
+class PublicAPIEmbeddings:
+    def __init__(self, model: str, base_url: str, api_key: str = "") -> None:
+        self.model = model
+        self.base_url = _normalize_public_base_url(base_url, "embeddings")
+        self.api_key = api_key
+        self.timeout = httpx.Timeout(120.0, connect=30.0)
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(
+                self.base_url,
+                headers=self._headers(),
+                json={"model": self.model, "input": texts},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        data = payload.get("data") or []
+        return [item["embedding"] for item in data]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
 
 
 def _split_postgres_url(database_url: str) -> tuple[str, str]:
@@ -215,12 +284,27 @@ def shared_collection_name() -> str:
     )
 
 
-def _get_chroma_client() -> chromadb.PersistentClient:
+def _get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
-        persist_directory = Path(CHROMA_PERSIST_DIRECTORY)
-        persist_directory.mkdir(parents=True, exist_ok=True)
-        _chroma_client = chromadb.PersistentClient(path=str(persist_directory))
+        if CHROMA_API_KEY and CHROMA_TENANT and CHROMA_DATABASE:
+            cloud_client_factory = getattr(chromadb, "CloudClient", None)
+            if cloud_client_factory is None:
+                raise RuntimeError(
+                    "Chroma Cloud configuration is set, but this chromadb package does not provide CloudClient."
+                )
+            _chroma_client = cloud_client_factory(
+                api_key=CHROMA_API_KEY,
+                tenant=CHROMA_TENANT,
+                database=CHROMA_DATABASE,
+            )
+        else:
+            persist_directory = Path(CHROMA_PERSIST_DIRECTORY)
+            persist_directory.mkdir(parents=True, exist_ok=True)
+            _chroma_client = chromadb.PersistentClient(
+                path=str(persist_directory),
+                settings=ChromaSettings(),
+            )
     return _chroma_client
 
 
@@ -228,15 +312,21 @@ def get_embeddings():
     global _embeddings
     if _embeddings is None:
         try:
-            _embeddings = OllamaEmbeddings(
-                model=EMBEDDING_MODEL,
-                base_url=OLLAMA_BASE_URL,
-            )
+            if EMBEDDING_PROVIDER == "public":
+                _embeddings = PublicAPIEmbeddings(
+                    model=EMBEDDING_MODEL,
+                    base_url=PUBLIC_EMBEDDING_BASE_URL or PUBLIC_API_BASE_URL,
+                    api_key=PUBLIC_API_KEY,
+                )
+            else:
+                _embeddings = OllamaEmbeddings(
+                    model=EMBEDDING_MODEL,
+                    base_url=OLLAMA_BASE_URL,
+                )
         except Exception as exc:
             raise EmbeddingInitializationError(
-                "Failed to initialize Ollama embeddings. "
-                "Make sure the embedding model is pulled in Ollama and the configured "
-                "OLLAMA_URL is reachable from the API container."
+                "Failed to initialize embeddings. "
+                "Check the configured embedding provider, base URL, model name, and API key."
             ) from exc
     return _embeddings
 
@@ -265,6 +355,14 @@ def reset_vectorstore(collection_name: str | None = None) -> Chroma:
 
 
 def get_llm():
+    if LLM_PROVIDER == "public":
+        return {
+            "provider": "public",
+            "model": OLLAMA_MODEL,
+            "base_url": PUBLIC_LLM_BASE_URL or PUBLIC_API_BASE_URL,
+            "api_key": PUBLIC_API_KEY,
+            "temperature": 0.15,
+        }
     return OllamaLLM(
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,

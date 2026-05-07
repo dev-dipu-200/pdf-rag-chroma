@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
     question: str
-    top_k: Optional[int] = 5
+    top_k: Optional[int] = 3
     session_id: Optional[int] = None
 
 class QueryResponse(BaseModel):
@@ -64,6 +64,12 @@ class ChatMessageResponse(BaseModel):
 
 class IngestResponse(BaseModel):
     document: PdfDocumentResponse
+    status: str
+
+
+class MultiIngestResponse(BaseModel):
+    documents: List[PdfDocumentResponse] = Field(default_factory=list)
+    queued_documents: int
     status: str
 
 

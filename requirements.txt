@@ -9,10 +9,9 @@ celery[redis]
 chromadb
 langchain-chroma
 langchain-ollama
-pypdf
-pdfplumber
-pypdfium2
+pymupdf
+pymupdf4llm
 psycopg[binary]
-pytesseract
 SQLAlchemy[asyncio]
 asyncpg
+httpx

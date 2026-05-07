@@ -24,6 +24,14 @@ from app.services.pdf import (
 )
 
 
+def _build_index_metadata(document: PdfDocument) -> dict[str, str]:
+    return {
+        "source": document.original_filename,
+        "document_id": str(document.id),
+        "user_id": str(document.user_id),
+    }
+
+
 def _set_document_state(document: PdfDocument, status: str, error_message: str | None = None) -> None:
     document.status = status
     document.error_message = error_message
@@ -127,13 +135,10 @@ def index_pdf_document(document_id: int) -> dict:
 
         docs = extract_and_chunk_pdf(
             document.stored_path,
-            metadata={
-                "source": document.original_filename,
-                "document_id": str(document.id),
-                "user_id": str(document.user_id),
-            },
+            metadata=_build_index_metadata(document),
             enable_ocr=ENABLE_OCR,
             ocr_languages=OCR_LANGS,
+            include_tree_documents=False,
         )
         vectorstore = get_vectorstore(shared_collection_name())
         indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
@@ -200,13 +205,10 @@ def reindex_user_documents(user_id: int) -> dict:
             try:
                 docs = extract_and_chunk_pdf(
                     document.stored_path,
-                    metadata={
-                        "source": document.original_filename,
-                        "document_id": str(document.id),
-                        "user_id": str(document.user_id),
-                    },
+                    metadata=_build_index_metadata(document),
                     enable_ocr=ENABLE_OCR,
                     ocr_languages=OCR_LANGS,
+                    include_tree_documents=False,
                 )
                 indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
                 document.chunks_added = indexed_pages

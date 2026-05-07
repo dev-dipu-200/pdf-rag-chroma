@@ -132,6 +132,8 @@
         .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3); }
         .btn-secondary { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border: 1px solid var(--glass-border); }
         .btn-secondary:hover { background: rgba(255, 255, 255, 0.08); }
+        .btn-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.22); }
+        .btn-danger:hover { background: var(--danger); color: white; }
 
         .archive-table-container {
             background: var(--glass-bg);
@@ -195,7 +197,10 @@
             <section class="panel">
                 <h2><svg class="icon"><use href="#icon-upload"/></svg> Knowledge Ingestion</h2>
                 <div class="input-group">
-                    <input id="pdfInput" type="file" accept="application/pdf">
+                    <input id="pdfInput" type="file" accept="application/pdf" multiple>
+                    <div style="font-size:0.875rem; color:var(--text-muted); line-height:1.5;">
+                        Upload one or more PDF files in Hindi, English, or mixed language. Scanned PDFs are supported through OCR.
+                    </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                         <button id="uploadButton" class="btn-primary">Queue Upload</button>
                         <button id="reindexButton" class="btn-secondary">Reindex All</button>
@@ -282,7 +287,16 @@
                 redirectToChat();
                 throw new Error("Authentication required.");
             }
-            if (!response.ok) throw new Error(await response.text());
+            if (!response.ok) {
+                let message = `Request failed with status ${response.status}`;
+                try {
+                    const payload = await response.json();
+                    message = payload.detail || payload.message || JSON.stringify(payload);
+                } catch (_) {
+                    message = await response.text();
+                }
+                throw new Error(message);
+            }
             return response.json();
         }
 
@@ -335,10 +349,17 @@
                     <td>${doc.chunks_added} chunks</td>
                     <td style="color:var(--text-muted); font-size:0.875rem">${new Date(doc.created_at).toLocaleString()}</td>
                     <td>
-                        ${doc.error_message ? `<div style="color:var(--danger); font-size:0.75rem; max-width:200px" title="${doc.error_message}">Error: ${doc.error_message.substring(0, 30)}...</div>` : '--'}
+                        <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-start;">
+                            <button class="btn-danger" data-delete-document-id="${doc.id}" style="padding:8px 12px; font-size:0.8125rem;">Delete</button>
+                            ${doc.error_message ? `<div style="color:var(--danger); font-size:0.75rem; max-width:200px" title="${doc.error_message}">Error: ${doc.error_message.substring(0, 30)}...</div>` : ''}
+                        </div>
                     </td>
                 </tr>
             `).join('');
+
+            tableBody.querySelectorAll("button[data-delete-document-id]").forEach((button) => {
+                button.addEventListener("click", () => deleteDocument(Number(button.dataset.deleteDocumentId)));
+            });
         }
 
         function updatePagination(data) {
@@ -366,13 +387,15 @@
             const input = document.getElementById("pdfInput");
             if (!input.files.length) return;
             const fd = new FormData();
-            fd.append("file", input.files[0]);
+            for (const file of input.files) {
+                fd.append("files", file);
+            }
             try {
-                await api("/ingest/pdf", {
+                const result = await api("/ingest/pdfs", {
                     method: "POST",
                     body: fd
                 });
-                uploadStatus.textContent = "Queued for indexing";
+                uploadStatus.textContent = `${result.queued_documents} PDF file(s) queued for indexing`;
                 uploadStatus.className = "status-msg ok";
                 input.value = "";
                 fetchDocuments();
@@ -386,6 +409,21 @@
             try {
                 await api("/ingest/reindex", { method: "POST" });
                 uploadStatus.textContent = "Reindexing started";
+                uploadStatus.className = "status-msg ok";
+                fetchDocuments();
+            } catch (err) {
+                uploadStatus.textContent = err.message;
+                uploadStatus.className = "status-msg error";
+            }
+        }
+
+        async function deleteDocument(documentId) {
+            const confirmed = window.confirm("Delete this document and remove its indexed data?");
+            if (!confirmed) return;
+
+            try {
+                await api(`/ingest/documents/${documentId}`, { method: "DELETE" });
+                uploadStatus.textContent = "Document deleted";
                 uploadStatus.className = "status-msg ok";
                 fetchDocuments();
             } catch (err) {

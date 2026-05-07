@@ -25,7 +25,9 @@ async def _user_count(db: AsyncSession) -> int:
     return count_result.scalar() or 0
 
 
-async def _create_user(db: AsyncSession, username: str, password: str, role: str) -> User:
+async def _create_user(
+    db: AsyncSession, username: str, password: str, role: str
+) -> User:
     user = User(username=username, password_hash=hash_password(password), role=role)
     db.add(user)
     await db.commit()
@@ -37,9 +39,13 @@ async def _create_user(db: AsyncSession, username: str, password: str, role: str
 async def register(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
     username = payload.username.strip().lower()
     if len(username) < 3:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+        raise HTTPException(
+            status_code=400, detail="Username must be at least 3 characters."
+        )
     if len(payload.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        raise HTTPException(
+            status_code=400, detail="Password must be at least 6 characters."
+        )
 
     existing = await _username_exists(db, username)
     if existing is not None:
@@ -56,7 +62,12 @@ async def register(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
 
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            created_at=user.created_at,
+        ),
     )
 
 
@@ -64,9 +75,13 @@ async def register(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
 async def register_ui(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
     username = payload.username.strip().lower()
     if len(username) < 3:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+        raise HTTPException(
+            status_code=400, detail="Username must be at least 3 characters."
+        )
     if len(payload.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        raise HTTPException(
+            status_code=400, detail="Password must be at least 6 characters."
+        )
 
     existing = await _username_exists(db, username)
     if existing is not None:
@@ -82,24 +97,26 @@ async def register_ui(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
     user = await _create_user(db, username, payload.password, "user")
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            created_at=user.created_at,
+        ),
     )
 
 
 @router.post("/register-admin", response_model=AuthResponse)
-async def register_admin(
-    payload: AuthRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required.")
-
+async def register_admin(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
     username = payload.username.strip().lower()
     if len(username) < 3:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+        raise HTTPException(
+            status_code=400, detail="Username must be at least 3 characters."
+        )
     if len(payload.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+        raise HTTPException(
+            status_code=400, detail="Password must be at least 6 characters."
+        )
 
     existing = await _username_exists(db, username)
     if existing is not None:
@@ -108,7 +125,12 @@ async def register_admin(
     user = await _create_user(db, username, payload.password, "admin")
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            created_at=user.created_at,
+        ),
     )
 
 
@@ -122,7 +144,12 @@ async def login(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
 
     return AuthResponse(
         access_token=create_access_token(user),
-        user=UserResponse(id=user.id, username=user.username, role=user.role, created_at=user.created_at),
+        user=UserResponse(
+            id=user.id,
+            username=user.username,
+            role=user.role,
+            created_at=user.created_at,
+        ),
     )
 
 

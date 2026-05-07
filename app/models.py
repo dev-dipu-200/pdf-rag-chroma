@@ -80,6 +80,7 @@ class PdfDocument(Base):
     original_filename = Column(String(255), nullable=False)
     stored_filename = Column(String(255), nullable=False)
     stored_path = Column(String(512), nullable=False)
+    file_hash = Column(String(64), nullable=True, index=True)
     status = Column(String(32), nullable=False, default="pending", index=True)
     chunks_added = Column(Integer, nullable=False, default=0)
     error_message = Column(Text, nullable=True)

@@ -73,12 +73,33 @@ async def _ensure_anonymous_query_usage_table() -> None:
         )
 
 
+async def _ensure_pdf_document_file_hash_column() -> None:
+    async with async_engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE pdf_documents
+                ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS ix_pdf_documents_user_file_hash
+                ON pdf_documents (user_id, file_hash)
+                """
+            )
+        )
+
+
 async def init_db() -> None:
     await _ensure_postgres_database_exists()
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _ensure_user_role_column()
     await _ensure_anonymous_query_usage_table()
+    await _ensure_pdf_document_file_hash_column()
 
 
 async def get_db():

@@ -15,12 +15,14 @@ FastAPI app for a local multi-user PDF chatbot:
 ## Architecture
 
 - `app/routers/auth.py`: register, login, logout, current user
-- `app/routers/ingest.py`: multi-PDF upload, background queue, document status, reindex
-- `app/routers/query.py`: chat sessions, message history, RAG answers
+- `app/routers/ingest.py`: thin upload and reindex endpoints
+- `app/routers/query.py`: thin chat/session/query endpoints
 - `app/tasks.py`: Celery ingestion and reindex tasks
 - `app/models.py`: users, sessions, chat history, PDF metadata
 - `app/dependencies.py`: Ollama, ChromaDB, runtime settings
-- `app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and chunking
+- `app/services/ingestion.py`: upload validation, storage, queue orchestration
+- `app/services/query_service.py`: retrieval, session persistence, answer orchestration
+- `app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and OCR-aware chunking
 - `templates/chat.html`: login + upload + chat UI
 
 ## Important model note
@@ -145,11 +147,12 @@ Services:
 1. Create the initial admin with `POST /auth/register`, or register a normal user from the UI.
 2. The API returns a bearer token.
 3. The UI sends `Authorization: Bearer <token>` on protected requests.
-4. Upload a PDF.
-5. PDFs are queued to Celery and indexed in the background.
-6. Ask questions from the UI.
-7. Retrieval runs against the shared ChromaDB collection built from uploaded PDFs.
-8. Chat sessions and messages are stored per user in PostgreSQL.
+4. Upload one PDF with `POST /ingest/pdf` or multiple PDFs with `POST /ingest/pdfs`.
+5. Files are stored under `uploads/<user_id>/` and queued to Celery for indexing.
+6. English, Hindi, and mixed-language PDFs are supported. Use `OCR_LANGS=eng+hin` for scanned files.
+7. Ask questions from the UI or the query API after indexing finishes.
+8. Retrieval runs against the shared ChromaDB collection built from uploaded PDFs.
+9. Chat sessions and messages are stored per user in PostgreSQL.
 
 ## PDF handling
 
@@ -170,6 +173,7 @@ Services:
 - `GET /auth/me`
 - `GET /chat`
 - `POST /ingest/pdf`
+- `POST /ingest/pdfs`
 - `GET /ingest/documents`
 - `POST /ingest/reindex`
 - `GET /query/sessions`
@@ -185,5 +189,6 @@ Services:
 - Additional admin accounts can be created only by an authenticated admin through `POST /auth/register-admin`.
 - Retrieval reads from the shared ChromaDB PDF collection.
 - PDF ingestion is asynchronous through Celery.
+- Multiple PDFs can be uploaded in a single request and are queued independently.
 - Reindex drops and rebuilds the shared ChromaDB collection.
 - Embeddings are sent to Ollama in batches; if indexing still fails with Ollama `EOF` or `500` errors, lower `EMBEDDING_BATCH_SIZE`.
