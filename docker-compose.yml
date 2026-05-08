@@ -1,6 +1,7 @@
 x-app-base: &app-base
   build:
-    context: .
+    context: ./backend
+    dockerfile: Dockerfile
     args:
       PYTHON_BASE_IMAGE: python:3.12-slim
   volumes:
@@ -50,8 +51,6 @@ services:
       - "8000:8000"
     env_file:
       - .env.docker
-    environment:
-      DOTENV_FILE: .env.docker
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,8 +63,6 @@ services:
     command: ["sh", "-c", "celery -A celery_worker worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-1}"]
     env_file:
       - .env.docker
-    environment:
-      DOTENV_FILE: .env.docker
     depends_on:
       postgres:
         condition: service_healthy

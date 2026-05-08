@@ -15,14 +15,13 @@ RUN apt-get update \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY docker ./docker
 COPY main.py ./main.py
 COPY celery_worker.py ./celery_worker.py
-COPY .env.docker ./.env.docker
 
 RUN mkdir -p /app/uploads /app/chroma_data
 

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 const auth = useAuth()
 
 const onLogout = async () => {
@@ -8,7 +8,7 @@ const onLogout = async () => {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
+  <div class="flex min-h-screen max-w-full flex-col gap-6 px-4 py-6 lg:px-6">
     <header class="rounded-3xl border border-white/60 bg-white/80 p-4 shadow-panel backdrop-blur">
       <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -16,17 +16,12 @@ const onLogout = async () => {
           <h1 class="text-2xl font-bold text-slate-900">PDF RAG Workspace</h1>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <NuxtLink
-            to="/chat"
-            class="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-300 hover:text-sky-700"
-          >
+          <NuxtLink to="/chat"
+            class="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-300 hover:text-sky-700">
             Chat
           </NuxtLink>
-          <NuxtLink
-            v-if="auth.user.value?.role === 'admin'"
-            to="/documents"
-            class="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-orange-300 hover:text-orange-700"
-          >
+          <NuxtLink v-if="auth.user.value?.role === 'admin'" to="/documents"
+            class="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-orange-300 hover:text-orange-700">
             Documents
           </NuxtLink>
           <div class="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white">
@@ -34,8 +29,7 @@ const onLogout = async () => {
           </div>
           <button
             class="rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600"
-            @click="onLogout"
-          >
+            @click="onLogout">
             Logout
           </button>
         </div>

@@ -43,6 +43,19 @@ def ndjson_line(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False) + "\n"
 
 
+def _embedding_unavailable_error(exc: Exception) -> HTTPException:
+    logger.warning("Embedding retrieval failed: %s: %s", type(exc).__name__, exc)
+    return HTTPException(
+        status_code=503,
+        detail=(
+            "Embeddings are unavailable, so retrieval cannot run. "
+            "Verify the embedding model is available at the configured Ollama endpoint, "
+            "reduce EMBEDDING_BATCH_SIZE if indexing is unstable, "
+            "and confirm OLLAMA_URL is reachable."
+        ),
+    )
+
+
 def make_chat_title(question: str) -> str:
     compact = " ".join(question.split())
     return compact[:80] or "New chat"
@@ -208,15 +221,8 @@ async def prepare_query_with_session(
 
     try:
         _, sources, context = await get_relevant_context(question, top_k)
-    except (EmbeddingInitializationError, ResponseError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Embeddings are unavailable, so retrieval cannot run. "
-                "Pull the configured embedding model in Ollama, reduce embedding batch size if needed, "
-                "and verify OLLAMA_URL."
-            ),
-        ) from exc
+    except (EmbeddingInitializationError, ResponseError, httpx.HTTPError) as exc:
+        raise _embedding_unavailable_error(exc) from exc
 
     if not context.strip():
         raise HTTPException(status_code=404, detail="No relevant PDF pages found for this question.")

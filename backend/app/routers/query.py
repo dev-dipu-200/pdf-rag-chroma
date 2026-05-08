@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,14 +142,33 @@ async def stream_answer(
     current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    prepared = await prepare_query_with_session(
-        question=req.question,
-        top_k=req.top_k or 5,
-        request=request,
-        db=db,
-        current_user=current_user,
-        session_id=req.session_id,
-    )
+    try:
+        prepared = await prepare_query_with_session(
+            question=req.question,
+            top_k=req.top_k or 5,
+            request=request,
+            db=db,
+            current_user=current_user,
+            session_id=req.session_id,
+        )
+    except HTTPException as exc:
+        detail = exc.detail
+        status_code = exc.status_code
+
+        async def error_stream():
+            yield ndjson_line(
+                {
+                    "type": "error",
+                    "detail": detail,
+                    "status_code": status_code,
+                }
+            )
+
+        return StreamingResponse(
+            error_stream(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     async def event_stream():
         answer_parts: list[str] = []

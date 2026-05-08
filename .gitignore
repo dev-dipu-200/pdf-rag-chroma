@@ -3,10 +3,6 @@ uploads/
 venv/
 __pycache__/
 
-.env.dev
-.env.docker
-.env.prod
-
-.agents
-
-
+.env.*
+.agents/
+.codex/

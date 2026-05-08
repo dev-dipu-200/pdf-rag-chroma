@@ -132,7 +132,12 @@ const submitQuestion = async () => {
       }
     )
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Streaming failed.'
+    const message = err instanceof Error ? err.message : 'Streaming failed.'
+    error.value = message
+    const target = messages.value.find((entry) => entry.id === currentStreamingId)
+    if (target) {
+      target.content = message
+    }
   } finally {
     sending.value = false
   }

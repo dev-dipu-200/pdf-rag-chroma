@@ -1,5 +1,7 @@
 # Custom PDF Chatbot
 
+Backend API code now lives under `backend/`. The frontend remains under `frontend/`.
+
 FastAPI app for a local multi-user PDF chatbot:
 
 - local Ollama for answers with `llama3`
@@ -14,15 +16,15 @@ FastAPI app for a local multi-user PDF chatbot:
 
 ## Architecture
 
-- `app/routers/auth.py`: register, login, logout, current user
-- `app/routers/ingest.py`: thin upload and reindex endpoints
-- `app/routers/query.py`: thin chat/session/query endpoints
-- `app/tasks.py`: Celery ingestion and reindex tasks
-- `app/models.py`: users, sessions, chat history, PDF metadata
-- `app/dependencies.py`: Ollama, ChromaDB, runtime settings
-- `app/services/ingestion.py`: upload validation, storage, queue orchestration
-- `app/services/query_service.py`: retrieval, session persistence, answer orchestration
-- `app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and OCR-aware chunking
+- `backend/app/routers/auth.py`: register, login, logout, current user
+- `backend/app/routers/ingest.py`: thin upload and reindex endpoints
+- `backend/app/routers/query.py`: thin chat/session/query endpoints
+- `backend/app/tasks.py`: Celery ingestion and reindex tasks
+- `backend/app/models.py`: users, sessions, chat history, PDF metadata
+- `backend/app/dependencies.py`: Ollama, ChromaDB, runtime settings
+- `backend/app/services/ingestion.py`: upload validation, storage, queue orchestration
+- `backend/app/services/query_service.py`: retrieval, session persistence, answer orchestration
+- `backend/app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and OCR-aware chunking
 - `frontend/`: Nuxt 3 + Tailwind client for auth, chat, and document management
 
 ## Important model note
@@ -121,6 +123,7 @@ ollama pull nomic-embed-text
 Then install dependencies and run:
 
 ```bash
+cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload
 celery -A celery_worker worker --loglevel=info --concurrency=2

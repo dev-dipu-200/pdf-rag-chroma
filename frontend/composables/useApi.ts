@@ -54,7 +54,7 @@ export function useApi() {
 
   const streamQuery = async (
     payload: { question: string; top_k?: number; session_id?: number | null },
-    onLine: (line: Record<string, any>) => void
+    onLine: (line: Record<string, any>) => void | Promise<void>
   ) => {
     const headers = new Headers({ 'Content-Type': 'application/json' })
     if (token.value) {
@@ -97,12 +97,12 @@ export function useApi() {
         if (!trimmed) {
           continue
         }
-        onLine(JSON.parse(trimmed))
+        await onLine(JSON.parse(trimmed))
       }
     }
 
     if (buffer.trim()) {
-      onLine(JSON.parse(buffer))
+      await onLine(JSON.parse(buffer))
     }
   }
 
