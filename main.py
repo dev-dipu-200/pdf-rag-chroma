@@ -1,10 +1,11 @@
 # FastAPI app entrypoint
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
 from app.dependencies import get_runtime_settings
-from app.routers import auth, chat, ingest, query
+from app.routers import auth, ingest, query
 
 settings = get_runtime_settings()
 
@@ -17,12 +18,25 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+cors_origins = [
+    origin.strip()
+    for origin in settings.cors_allow_origins.split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins or ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.on_event("startup")
 async def on_startup():
     await init_db()
 
 app.include_router(auth.router)
-app.include_router(chat.router)
 app.include_router(ingest.router)
 app.include_router(query.router)
 

@@ -89,6 +89,7 @@ class RuntimeSettings:
     public_api_base_url: str
     public_llm_base_url: str
     public_embedding_base_url: str
+    cors_allow_origins: str
     jwt_secret_key: str
     access_token_expire_minutes: int
     enable_ocr: bool
@@ -133,6 +134,10 @@ def _load_runtime_settings() -> RuntimeSettings:
         public_api_base_url=_first_env("PUBLIC_API_BASE_URL", default=""),
         public_llm_base_url=_first_env("PUBLIC_LLM_BASE_URL", "OPENAI_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
         public_embedding_base_url=_first_env("PUBLIC_EMBEDDING_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
+        cors_allow_origins=_first_env(
+            "CORS_ALLOW_ORIGINS",
+            default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+        ),
         jwt_secret_key=_first_env("JWT_SECRET_KEY", default="change-me-in-production"),
         access_token_expire_minutes=int(_first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")),
         enable_ocr=_first_env("ENABLE_OCR", default="false").lower() in {"1", "true", "yes", "on"},

@@ -20,7 +20,6 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY docker ./docker
-COPY templates ./templates
 COPY main.py ./main.py
 COPY celery_worker.py ./celery_worker.py
 COPY .env.docker ./.env.docker

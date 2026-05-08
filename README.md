@@ -23,7 +23,7 @@ FastAPI app for a local multi-user PDF chatbot:
 - `app/services/ingestion.py`: upload validation, storage, queue orchestration
 - `app/services/query_service.py`: retrieval, session persistence, answer orchestration
 - `app/services/pdf.py`: `pypdf` + `pdfplumber` extraction and OCR-aware chunking
-- `templates/chat.html`: login + upload + chat UI
+- `frontend/`: Nuxt 3 + Tailwind client for auth, chat, and document management
 
 ## Important model note
 
@@ -171,7 +171,6 @@ Services:
 - `POST /auth/login`
 - `POST /auth/logout`
 - `GET /auth/me`
-- `GET /chat`
 - `POST /ingest/pdf`
 - `POST /ingest/pdfs`
 - `GET /ingest/documents`
