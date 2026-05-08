@@ -2,6 +2,7 @@
 import re
 from pathlib import Path
 from langchain_core.documents import Document
+import pymupdf
 import pymupdf4llm
 
 # Increased sizes to maintain context for dense Hindi script
@@ -97,23 +98,31 @@ def _extract_pages(filepath: str, use_ocr: bool = False) -> list[dict]:
     Extracts pages using standard text extraction by default.
     If use_ocr is True, it triggers Tesseract to read the visual layer.
     """
-    # Base arguments for both methods
     base_args = {
-        "filepath": filepath,
         "page_chunks": True,
         "write_images": False,
         "ignore_images": True,
     }
 
+    extract_args = dict(base_args)
     if use_ocr:
-        return pymupdf4llm.to_markdown(
-            **base_args,
+        extract_args.update(
             force_ocr=True,
             ocr_language="hin+eng",
             dpi=300,
         )
     else:
-        return pymupdf4llm.to_markdown(**base_args, table_strategy="lines")
+        extract_args.update(table_strategy="lines")
+
+    try:
+        return pymupdf4llm.to_markdown(filepath, **extract_args)
+    except TypeError as exc:
+        error_text = str(exc)
+        if "missing 1 required positional argument: 'doc'" not in error_text:
+            raise
+
+    with pymupdf.open(filepath) as doc:
+        return pymupdf4llm.to_markdown(doc, **extract_args)
 
 
 def _page_text(page_chunk: dict) -> str:
