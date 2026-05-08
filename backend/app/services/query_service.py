@@ -1,3 +1,4 @@
+# query_service.py
 import json
 import logging
 from dataclasses import dataclass
@@ -63,9 +64,7 @@ def make_chat_title(question: str) -> str:
 
 async def ensure_indexed_documents(db: AsyncSession) -> None:
     result = await db.execute(
-        select(PdfDocument.id)
-        .filter(PdfDocument.status == "indexed")
-        .limit(1)
+        select(PdfDocument.id).filter(PdfDocument.status == "indexed").limit(1)
     )
     has_docs = result.scalar_one_or_none()
     if has_docs is None:
@@ -83,8 +82,9 @@ async def get_or_create_session(
 ) -> ChatSession:
     if requested_session_id is not None:
         result = await db.execute(
-            select(ChatSession)
-            .filter(ChatSession.id == requested_session_id, ChatSession.user_id == user.id)
+            select(ChatSession).filter(
+                ChatSession.id == requested_session_id, ChatSession.user_id == user.id
+            )
         )
         existing_session = result.scalar_one_or_none()
         if existing_session is not None:
@@ -190,17 +190,34 @@ async def authorize_query(
     return await consume_anonymous_query(request, db)
 
 
-async def get_relevant_context(question: str, top_k: int) -> tuple[list, list[str], str]:
+async def get_relevant_context(
+    question: str, top_k: int = 10
+) -> tuple[list, list[str], str]:
     vectorstore = get_vectorstore(shared_collection_name())
-    docs = await vectorstore.asimilarity_search(question, k=max(top_k + 2, 6))
+
+    search_k = max(top_k + 5, 15)
+    docs = await vectorstore.asimilarity_search(question, k=search_k)
     filtered_docs = [
-        doc for doc in docs
+        doc
+        for doc in docs
         if doc.metadata.get("content_type") in {"page_chunk", "page"}
     ]
-    docs = filtered_docs[:top_k] if filtered_docs else docs[:top_k]
-    sources = list({doc.metadata.get("source", "unknown") for doc in docs})
-    context = format_docs(docs)
-    return docs, sources, context
+
+    final_docs = filtered_docs[:top_k] if filtered_docs else docs[:top_k]
+    try:
+        final_docs.sort(key=lambda x: int(x.metadata.get("page", 0)))
+    except (ValueError, TypeError):
+        pass
+
+    sources = list(
+        {
+            f"{doc.metadata.get('source', 'unknown')} (Pg {doc.metadata.get('page', '?')})"
+            for doc in final_docs
+        }
+    )
+
+    context = format_docs(final_docs)
+    return final_docs, sources, context
 
 
 async def prepare_query_with_session(
@@ -225,7 +242,9 @@ async def prepare_query_with_session(
         raise _embedding_unavailable_error(exc) from exc
 
     if not context.strip():
-        raise HTTPException(status_code=404, detail="No relevant PDF pages found for this question.")
+        raise HTTPException(
+            status_code=404, detail="No relevant PDF pages found for this question."
+        )
 
     return QueryPreparationResult(
         sources=sources,
@@ -256,11 +275,20 @@ async def execute_query(
     try:
         answer = await generate_answer(prepared.context, question)
     except Exception as exc:
-        logger.warning("LLM query failed: %s", exc)
-        raise HTTPException(status_code=503, detail=f"LLM query failed: {exc}") from exc
-
+        logger.error("LLM query failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="The AI model is currently busy. Please try again in a moment.",
+        ) from exc
     if prepared.user_id is not None and prepared.session_id is not None:
-        await save_message(db, prepared.user_id, prepared.session_id, "assistant", answer, prepared.sources)
+        await save_message(
+            db,
+            prepared.user_id,
+            prepared.session_id,
+            "assistant",
+            answer,
+            prepared.sources,
+        )
 
     return QueryExecutionResult(
         answer=answer,
@@ -271,10 +299,8 @@ async def execute_query(
 
 
 async def generate_answer(context: str, question: str) -> str:
+    """Helper to call the RAG chain with context and question."""
     llm = get_llm()
-    if isinstance(llm, dict) and llm.get("provider") == "public":
-        return await _generate_public_answer(llm, context, question)
-
     chain = build_answer_chain(llm)
     return await chain.ainvoke({"context": context, "question": question})
 

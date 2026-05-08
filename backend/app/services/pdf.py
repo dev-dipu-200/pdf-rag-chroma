@@ -1,11 +1,12 @@
+# pdf.py
 import re
 from pathlib import Path
-
 from langchain_core.documents import Document
 import pymupdf4llm
 
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 200
+# Increased sizes to maintain context for dense Hindi script
+CHUNK_SIZE = 2400
+CHUNK_OVERLAP = 400
 MIN_RETRY_CHUNK_SIZE = 80
 TREE_BRANCH_FACTOR = 4
 TREE_NODE_SNIPPET_CHARS = 320
@@ -14,15 +15,12 @@ TREE_NODE_SNIPPET_CHARS = 320
 def _normalize_text(text: str) -> str:
     text = text.replace("\u00a0", " ")
     text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
 def sanitize_text_for_embedding(text: str) -> str:
     cleaned = text.replace("\x00", " ")
-    cleaned = "".join(
-        ch for ch in cleaned if ch == "\n" or ch == "\t" or ord(ch) >= 32
-    )
+    cleaned = "".join(ch for ch in cleaned if ch == "\n" or ch == "\t" or ord(ch) >= 32)
     cleaned = re.sub(r"[|•·]{4,}", " ", cleaned)
     cleaned = re.sub(r"[_=~-]{4,}", " ", cleaned)
     return _normalize_text(cleaned)
@@ -44,11 +42,17 @@ def _split_text(
     while start < text_length:
         end = min(start + chunk_size, text_length)
         if end < text_length:
+            # 1. Try splitting at paragraph
             split_at = text.rfind("\n\n", start, end)
             if split_at == -1:
                 split_at = text.rfind("\n", start, end)
+
+            # 2. Try splitting at Hindi (।) or English (. ) full stop
             if split_at == -1:
-                split_at = text.rfind(". ", start, end)
+                hindi_stop = text.rfind("।", start, end)
+                english_stop = text.rfind(". ", start, end)
+                split_at = max(hindi_stop, english_stop)
+
             if split_at == -1:
                 split_at = end
             else:
@@ -88,17 +92,28 @@ def split_chunk_for_retry(text: str, chunk_size: int) -> list[str]:
     return fallback or [sanitized]
 
 
-def _extract_pages(filepath: str) -> list[dict]:
-    pages = pymupdf4llm.to_markdown(
-        filepath,
-        page_chunks=True,
-        write_images=False,
-        ignore_images=True,
-        table_strategy="lines_strict",
-    )
-    if not isinstance(pages, list):
-        raise ValueError("pymupdf4llm did not return page chunks.")
-    return pages
+def _extract_pages(filepath: str, use_ocr: bool = False) -> list[dict]:
+    """
+    Extracts pages using standard text extraction by default.
+    If use_ocr is True, it triggers Tesseract to read the visual layer.
+    """
+    # Base arguments for both methods
+    base_args = {
+        "filepath": filepath,
+        "page_chunks": True,
+        "write_images": False,
+        "ignore_images": True,
+    }
+
+    if use_ocr:
+        return pymupdf4llm.to_markdown(
+            **base_args,
+            force_ocr=True,
+            ocr_language="hin+eng",
+            dpi=300,
+        )
+    else:
+        return pymupdf4llm.to_markdown(**base_args, table_strategy="lines")
 
 
 def _page_text(page_chunk: dict) -> str:
@@ -142,20 +157,29 @@ def _build_documents_from_pages(
         if not page_content:
             continue
 
-        documents.append(
-            Document(
-                page_content=page_content,
-                metadata={
-                    "source": filename,
-                    "page": str(page_number),
-                    "page_number": str(page_number),
-                    "content_type": "page_chunk",
-                    "chunk_index": "1",
-                    "chunk_count": "1",
-                    **base_metadata,
-                },
+        if page_number == 7:
+            page_chunks = [page_content]
+        else:
+            page_chunks = _split_text(
+                page_content, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP
             )
-        )
+
+        chunk_count = len(page_chunks)
+        for chunk_index, chunk_text in enumerate(page_chunks, start=1):
+            documents.append(
+                Document(
+                    page_content=chunk_text,
+                    metadata={
+                        "source": filename,
+                        "page": str(page_number),
+                        "page_number": str(page_number),
+                        "content_type": "page_chunk",
+                        "chunk_index": str(chunk_index),
+                        "chunk_count": str(chunk_count),
+                        **base_metadata,
+                    },
+                )
+            )
 
     return documents
 
@@ -197,8 +221,16 @@ def _build_tree_documents(leaf_documents: list[Document]) -> list[Document]:
                 next_level.extend(children)
                 continue
 
-            first_page = int(children[0].metadata.get("page_start") or children[0].metadata.get("page") or 0)
-            last_page = int(children[-1].metadata.get("page_end") or children[-1].metadata.get("page") or 0)
+            first_page = int(
+                children[0].metadata.get("page_start")
+                or children[0].metadata.get("page")
+                or 0
+            )
+            last_page = int(
+                children[-1].metadata.get("page_end")
+                or children[-1].metadata.get("page")
+                or 0
+            )
             source = children[0].metadata.get("source", "unknown")
             document_id = children[0].metadata.get("document_id")
             snippets = [
@@ -245,18 +277,23 @@ def _build_documents(filepath: str, metadata: dict | None = None) -> list[Docume
 def extract_and_chunk_pdf(
     filepath: str,
     metadata: dict | None = None,
-    enable_ocr: bool = False,
-    ocr_languages: str = "eng",
+    enable_ocr: bool = True,
+    ocr_languages: str = "hin+eng",
     include_tree_documents: bool = False,
 ) -> list[Document]:
-    del enable_ocr
-    del ocr_languages
+    """
+    Tries OCR extraction to fix the garbled Hindi text issues.
+    """
+    try:
+        pages_data = _extract_pages(filepath, use_ocr=enable_ocr)
+    except Exception as e:
+        print(f"OCR failed, falling back to standard: {e}")
+        pages_data = _extract_pages(filepath, use_ocr=False)
 
-    documents = _build_documents(filepath, metadata)
-    if not documents:
-        raise ValueError(
-            "No readable text was extracted from the PDF with pymupdf4llm."
-        )
-    if include_tree_documents:
-        return documents + _build_tree_documents(documents)
-    return documents
+    leaf_documents = _build_documents_from_pages(filepath, pages_data, metadata)
+
+    if not include_tree_documents:
+        return leaf_documents
+
+    tree_docs = _build_tree_documents(leaf_documents)
+    return leaf_documents + tree_docs

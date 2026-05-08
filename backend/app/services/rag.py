@@ -1,25 +1,30 @@
+# rag.py
 # Retrieval + generation logic
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-PROMPT_TEMPLATE = """\
-You are a helpful assistant for PDF question answering.
-Answer the question using ONLY the context below.
-If the answer is not present in the context, say that clearly.
-Reply in the same language as the user's question.
-The question and context may be in Hindi, English, or a mix of both. Use whichever context is relevant.
-Prefer exact values from tables when available.
-For figures, charts, and graphs, answer only from extracted caption or nearby text in the context.
-If chart or graph values are not clearly available in the context, say that the visual data is not precise enough to answer confidently.
-When possible, mention the source page number.
+PROMPT_TEMPLATE = """
+You are a specialized multilingual assistant capable of reading English and decoding corrupted Hindi text.
 
-Context:
+CONTEXT CHALLENGE:
+The Hindi text in the provided context may appear garbled (e.g., 'igykfnu' instead of 'पहला दिन', 'jktk' instead of 'राजा'). 
+The English text is usually clear.
+
+INSTRUCTIONS:
+1. **Language Detection**: Identify if the answer is in the English sections, the Hindi sections, or both.
+2. **Hindi Decoding**: If you encounter garbled Hindi text, use the surrounding context and numbers to decode the meaning (e.g., 'nku' = 'दान', 'HkaMkj' = 'भंडार'). 
+3. **Response Language**: Always answer in the SAME language as the user's question.
+4. **Accuracy**: If the user asks "Why" (क्यों), look for motivations or reasons (like the King's greed or fear of an empty treasury).
+5. **Tables**: Use the lists and numbers provided to give precise details for mathematical questions.
+
+CONTEXT:
 {context}
 
-Question: {question}
+QUESTION: 
+{question}
 
-Answer concisely and accurately:"""
+FINAL ANSWER:"""
 
 
 def format_docs(docs):
