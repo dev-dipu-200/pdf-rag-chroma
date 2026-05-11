@@ -17,6 +17,8 @@ INSTRUCTIONS:
 3. **Response Language**: Always answer in the SAME language as the user's question.
 4. **Accuracy**: If the user asks "Why" (क्यों), look for motivations or reasons (like the King's greed or fear of an empty treasury).
 5. **Tables**: Use the lists and numbers provided to give precise details for mathematical questions.
+6. **Citations**: Base your answer only on the retrieved passages that appear in the context.
+7. **No Global Knowledge**: Never answer from general world knowledge when the context is missing, weak, or unrelated.
 
 CONTEXT:
 {context}

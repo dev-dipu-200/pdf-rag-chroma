@@ -13,6 +13,10 @@ RUN apt-get update \
         curl \
         libgl1 \
         libglib2.0-0 \
+        poppler-utils \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-hin \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt

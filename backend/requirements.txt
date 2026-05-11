@@ -15,3 +15,5 @@ psycopg[binary]
 SQLAlchemy[asyncio]
 asyncpg
 httpx
+ollama
+docling

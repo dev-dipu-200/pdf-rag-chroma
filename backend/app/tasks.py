@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from uuid import uuid4
 
@@ -23,6 +24,9 @@ from app.services.pdf import (
     split_chunk_for_retry,
 )
 
+logger = logging.getLogger(__name__)
+PARSED_PREVIEW_CHARS = 1200
+
 
 def _build_index_metadata(document: PdfDocument) -> dict[str, str]:
     return {
@@ -44,6 +48,26 @@ def _clone_document(document: Document, content: str, depth: int, part_index: in
     metadata["chunk_retry_depth"] = depth
     metadata["chunk_retry_part"] = part_index
     return Document(page_content=content, metadata=metadata)
+
+
+def _log_parsed_documents(document: PdfDocument, docs: list[Document]) -> None:
+    logger.info(
+        "Parsed %s chunk(s) from document_id=%s file=%s",
+        len(docs),
+        document.id,
+        document.original_filename,
+    )
+    for index, parsed_doc in enumerate(docs, start=1):
+        preview = sanitize_text_for_embedding(parsed_doc.page_content)[:PARSED_PREVIEW_CHARS]
+        logger.info(
+            "Parsed preview %s/%s document_id=%s page=%s metadata=%s\n%s",
+            index,
+            len(docs),
+            document.id,
+            parsed_doc.metadata.get("page", "?"),
+            parsed_doc.metadata,
+            preview,
+        )
 
 
 def _add_document_with_retry(
@@ -140,6 +164,7 @@ def index_pdf_document(document_id: int) -> dict:
             ocr_languages=OCR_LANGS,
             include_tree_documents=False,
         )
+        _log_parsed_documents(document, docs)
         vectorstore = get_vectorstore(shared_collection_name())
         indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
         document.chunks_added = indexed_pages
@@ -210,6 +235,7 @@ def reindex_user_documents(user_id: int) -> dict:
                     ocr_languages=OCR_LANGS,
                     include_tree_documents=False,
                 )
+                _log_parsed_documents(document, docs)
                 indexed_pages, failures = _add_documents_in_batches(vectorstore, docs)
                 document.chunks_added = indexed_pages
                 total_chunks += indexed_pages

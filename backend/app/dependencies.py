@@ -94,6 +94,7 @@ class RuntimeSettings:
     access_token_expire_minutes: int
     enable_ocr: bool
     ocr_languages: str
+    pdf_parser: str
 
 
 def _load_runtime_settings() -> RuntimeSettings:
@@ -142,6 +143,7 @@ def _load_runtime_settings() -> RuntimeSettings:
         access_token_expire_minutes=int(_first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")),
         enable_ocr=_first_env("ENABLE_OCR", default="false").lower() in {"1", "true", "yes", "on"},
         ocr_languages=_first_env("OCR_LANGS", default="eng"),
+        pdf_parser=_first_env("PDF_PARSER", default="hybrid").lower(),
     )
 
 
@@ -185,6 +187,7 @@ JWT_SECRET_KEY = SETTINGS.jwt_secret_key
 ACCESS_TOKEN_EXPIRE_MINUTES = SETTINGS.access_token_expire_minutes
 ENABLE_OCR = SETTINGS.enable_ocr
 OCR_LANGS = SETTINGS.ocr_languages
+PDF_PARSER = SETTINGS.pdf_parser
 
 # Singleton-like clients
 _embeddings = None
@@ -349,13 +352,18 @@ def get_vectorstore(collection_name: str | None = None) -> Chroma:
     return vectorstore
 
 
+def invalidate_vectorstore(collection_name: str | None = None) -> None:
+    resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
+    _vectorstores.pop(resolved_collection, None)
+
+
 def reset_vectorstore(collection_name: str | None = None) -> Chroma:
     resolved_collection = collection_name or RESOLVED_COLLECTION_NAME
     try:
         _get_chroma_client().delete_collection(name=resolved_collection)
     except Exception:
         pass
-    _vectorstores.pop(resolved_collection, None)
+    invalidate_vectorstore(resolved_collection)
     return get_vectorstore(resolved_collection)
 
 

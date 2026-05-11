@@ -1,6 +1,8 @@
 # query_service.py
 import json
 import logging
+import asyncio
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -10,17 +12,15 @@ from ollama import ResponseError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import (
-    EmbeddingInitializationError,
-    get_llm,
-    get_vectorstore,
-    shared_collection_name,
-)
+from app.dependencies import EmbeddingInitializationError, ENABLE_OCR, OCR_LANGS, get_llm
 from app.models import AnonymousQueryUsage, ChatMessage, ChatSession, PdfDocument, User
+from app.services.pdf import extract_and_chunk_pdf, sanitize_text_for_embedding
 from app.services.rag import PROMPT_TEMPLATE, build_answer_chain, format_docs
 
 logger = logging.getLogger(__name__)
 ANONYMOUS_QUERY_LIMIT = 3
+LLM_RETRY_ATTEMPTS = 2
+MIN_TERM_OVERLAP = 1
 
 
 @dataclass
@@ -55,6 +55,18 @@ def _embedding_unavailable_error(exc: Exception) -> HTTPException:
             "and confirm OLLAMA_URL is reachable."
         ),
     )
+
+
+def _normalize_llm_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    lowered = message.lower()
+    if isinstance(exc, (httpx.HTTPError, ResponseError)):
+        return "The AI model is temporarily unavailable. Please try again in a moment."
+    if "502 bad gateway" in lowered or "status code: 502" in lowered:
+        return "The AI model gateway is temporarily unavailable. Please try again in a moment."
+    if "runner process has terminated" in lowered or "status code: 500" in lowered:
+        return "The AI model stopped while generating the answer. Please try again in a moment."
+    return "The AI model is currently busy. Please try again in a moment."
 
 
 def make_chat_title(question: str) -> str:
@@ -190,18 +202,74 @@ async def authorize_query(
     return await consume_anonymous_query(request, db)
 
 
-async def get_relevant_context(
-    question: str, top_k: int = 10
-) -> tuple[list, list[str], str]:
-    vectorstore = get_vectorstore(shared_collection_name())
+def _question_terms(question: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"\w+", question.lower(), flags=re.UNICODE)
+        if len(token) > 1
+    }
 
-    search_k = max(top_k + 5, 15)
-    docs = await vectorstore.asimilarity_search(question, k=search_k)
+
+def _document_match_score(question_terms: set[str], content: str, metadata: dict) -> tuple[int, int]:
+    normalized = sanitize_text_for_embedding(content).lower()
+    overlap = sum(1 for term in question_terms if term in normalized)
+    page = int(str(metadata.get("page", "9999")).split("-", 1)[0]) if metadata.get("page") else 9999
+    return overlap, -page
+
+
+async def get_relevant_context(
+    question: str,
+    top_k: int,
+    db: AsyncSession,
+    current_user: User | None,
+) -> tuple[list, list[str], str]:
+    stmt = select(PdfDocument).filter(PdfDocument.status == "indexed")
+    if current_user is not None:
+        stmt = stmt.filter(PdfDocument.user_id == current_user.id)
+    stmt = stmt.order_by(PdfDocument.created_at.asc())
+    result = await db.execute(stmt)
+    pdf_documents = result.scalars().all()
+
+    docs = []
+    for pdf_document in pdf_documents:
+        try:
+            docs.extend(
+                extract_and_chunk_pdf(
+                    pdf_document.stored_path,
+                    metadata={
+                        "source": pdf_document.original_filename,
+                        "document_id": str(pdf_document.id),
+                        "user_id": str(pdf_document.user_id),
+                    },
+                    enable_ocr=ENABLE_OCR,
+                    ocr_languages=OCR_LANGS,
+                    include_tree_documents=False,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Parsed-PDF fallback failed for document %s: %s",
+                pdf_document.id,
+                exc,
+            )
+
     filtered_docs = [
         doc
         for doc in docs
         if doc.metadata.get("content_type") in {"page_chunk", "page"}
     ]
+
+    question_terms = _question_terms(question)
+    if question_terms:
+        filtered_docs.sort(
+            key=lambda doc: _document_match_score(question_terms, doc.page_content, doc.metadata),
+            reverse=True,
+        )
+        filtered_docs = [
+            doc
+            for doc in filtered_docs
+            if _document_match_score(question_terms, doc.page_content, doc.metadata)[0] >= MIN_TERM_OVERLAP
+        ]
 
     final_docs = filtered_docs[:top_k] if filtered_docs else docs[:top_k]
     try:
@@ -237,14 +305,14 @@ async def prepare_query_with_session(
         await save_message(db, current_user.id, session.id, "user", question)
 
     try:
-        _, sources, context = await get_relevant_context(question, top_k)
+        _, sources, context = await get_relevant_context(
+            question=question,
+            top_k=top_k,
+            db=db,
+            current_user=current_user,
+        )
     except (EmbeddingInitializationError, ResponseError, httpx.HTTPError) as exc:
         raise _embedding_unavailable_error(exc) from exc
-
-    if not context.strip():
-        raise HTTPException(
-            status_code=404, detail="No relevant PDF pages found for this question."
-        )
 
     return QueryPreparationResult(
         sources=sources,
@@ -278,7 +346,7 @@ async def execute_query(
         logger.error("LLM query failed: %s", exc)
         raise HTTPException(
             status_code=503,
-            detail="The AI model is currently busy. Please try again in a moment.",
+            detail=_normalize_llm_error(exc),
         ) from exc
     if prepared.user_id is not None and prepared.session_id is not None:
         await save_message(
@@ -299,22 +367,51 @@ async def execute_query(
 
 
 async def generate_answer(context: str, question: str) -> str:
-    """Helper to call the RAG chain with context and question."""
-    llm = get_llm()
-    chain = build_answer_chain(llm)
-    return await chain.ainvoke({"context": context, "question": question})
+    """Answer from relevant parsed PDF context."""
+    if not context.strip():
+        return "I couldn't find the answer in the uploaded documents."
+    last_exc = None
+    for attempt in range(LLM_RETRY_ATTEMPTS):
+        try:
+            llm = get_llm()
+            chain = build_answer_chain(llm)
+            answer = (await chain.ainvoke({"context": context, "question": question})).strip()
+            if not answer:
+                return "I couldn't find the answer in the uploaded documents."
+            return answer
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("LLM answer attempt %s failed: %s", attempt + 1, exc)
+            if attempt + 1 >= LLM_RETRY_ATTEMPTS:
+                break
+            await asyncio.sleep(1)
+    raise last_exc
 
 
 async def stream_answer_chunks(context: str, question: str):
-    llm = get_llm()
-    if isinstance(llm, dict) and llm.get("provider") == "public":
-        async for chunk in _stream_public_answer(llm, context, question):
-            yield chunk
+    if not context.strip():
+        yield "I couldn't find the answer in the uploaded documents."
         return
+    last_exc = None
+    for attempt in range(LLM_RETRY_ATTEMPTS):
+        try:
+            llm = get_llm()
+            if isinstance(llm, dict) and llm.get("provider") == "public":
+                async for chunk in _stream_public_answer(llm, context, question):
+                    yield chunk
+                return
 
-    chain = build_answer_chain(llm)
-    async for chunk in chain.astream({"context": context, "question": question}):
-        yield chunk
+            chain = build_answer_chain(llm)
+            async for chunk in chain.astream({"context": context, "question": question}):
+                yield chunk
+            return
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("LLM stream attempt %s failed: %s", attempt + 1, exc)
+            if attempt + 1 >= LLM_RETRY_ATTEMPTS:
+                break
+            await asyncio.sleep(1)
+    raise last_exc
 
 
 def _public_headers(api_key: str) -> dict[str, str]:

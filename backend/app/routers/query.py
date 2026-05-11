@@ -10,6 +10,7 @@ from app.models import ChatMessage, ChatSession, User
 from app.schemas import (
     ChatMessageResponse,
     ChatSessionResponse,
+    ParsedQueryResponse,
     QueryRequest,
     QueryResponse,
     StatusResponse,
@@ -20,6 +21,7 @@ from app.services.query_service import (
     generate_answer,
     logger,
     ndjson_line,
+    _normalize_llm_error,
     prepare_query_with_session,
     save_message,
     stream_answer_chunks,
@@ -135,6 +137,29 @@ async def ask_question(
     )
 
 
+@router.post("/parsed", response_model=ParsedQueryResponse)
+async def get_parsed_question_context(
+    req: QueryRequest,
+    request: Request,
+    current_user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    prepared = await prepare_query_with_session(
+        question=req.question,
+        top_k=req.top_k or 5,
+        request=request,
+        db=db,
+        current_user=current_user,
+        session_id=req.session_id,
+    )
+    return ParsedQueryResponse(
+        content=prepared.context,
+        sources=prepared.sources,
+        session_id=prepared.session_id,
+        anonymous_remaining=prepared.anonymous_remaining,
+    )
+
+
 @router.post("/stream")
 async def stream_answer(
     req: QueryRequest,
@@ -217,7 +242,13 @@ async def stream_answer(
             )
         except Exception as exc:
             logger.warning("Streaming LLM query failed: %s", exc)
-            yield ndjson_line({"type": "error", "detail": f"LLM query failed: {exc}"})
+            yield ndjson_line(
+                {
+                    "type": "error",
+                    "detail": _normalize_llm_error(exc),
+                    "status_code": 503,
+                }
+            )
 
     return StreamingResponse(
         event_stream(),

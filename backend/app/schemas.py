@@ -15,6 +15,13 @@ class QueryResponse(BaseModel):
     session_id: Optional[int] = None
     anonymous_remaining: Optional[int] = None
 
+
+class ParsedQueryResponse(BaseModel):
+    content: str
+    sources: List[str] = Field(default_factory=list)
+    session_id: Optional[int] = None
+    anonymous_remaining: Optional[int] = None
+
 class AuthRequest(BaseModel):
     username: str
     password: str
