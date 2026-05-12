@@ -4,9 +4,16 @@ x-app-base: &app-base
     dockerfile: Dockerfile
     args:
       PYTHON_BASE_IMAGE: python:3.12-slim
+  environment:
+    HF_HOME: /app/.cache/huggingface
+    HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface/hub
+    TRANSFORMERS_CACHE: /app/.cache/huggingface/transformers
+    XDG_CACHE_HOME: /app/.cache
   volumes:
     - uploads_data:/app/uploads
     - chroma_data:/app/chroma_data
+    - hf_cache:/app/.cache
+    - rapidocr_models:/usr/local/lib/python3.12/site-packages/rapidocr/models
   extra_hosts:
     - "host.docker.internal:host-gateway"
   restart: unless-stopped
@@ -89,3 +96,5 @@ volumes:
   postgres_data:
   uploads_data:
   chroma_data:
+  hf_cache:
+  rapidocr_models:

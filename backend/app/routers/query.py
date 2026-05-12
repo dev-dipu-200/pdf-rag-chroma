@@ -167,35 +167,28 @@ async def stream_answer(
     current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        prepared = await prepare_query_with_session(
-            question=req.question,
-            top_k=req.top_k or 5,
-            request=request,
-            db=db,
-            current_user=current_user,
-            session_id=req.session_id,
-        )
-    except HTTPException as exc:
-        detail = exc.detail
-        status_code = exc.status_code
+    async def event_stream():
+        yield ndjson_line({"type": "status", "stage": "retrieving"})
 
-        async def error_stream():
+        try:
+            prepared = await prepare_query_with_session(
+                question=req.question,
+                top_k=req.top_k or 5,
+                request=request,
+                db=db,
+                current_user=current_user,
+                session_id=req.session_id,
+            )
+        except HTTPException as exc:
             yield ndjson_line(
                 {
                     "type": "error",
-                    "detail": detail,
-                    "status_code": status_code,
+                    "detail": exc.detail,
+                    "status_code": exc.status_code,
                 }
             )
+            return
 
-        return StreamingResponse(
-            error_stream(),
-            media_type="application/x-ndjson",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
-    async def event_stream():
         answer_parts: list[str] = []
         yield ndjson_line(
             {
@@ -208,6 +201,7 @@ async def stream_answer(
         )
         try:
             answer_started = False
+            yield ndjson_line({"type": "status", "stage": "generating"})
 
             async for chunk in stream_answer_chunks(prepared.context, req.question):
                 if not answer_started:

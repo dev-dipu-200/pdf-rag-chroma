@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -28,7 +30,8 @@ async def _user_count(db: AsyncSession) -> int:
 async def _create_user(
     db: AsyncSession, username: str, password: str, role: str
 ) -> User:
-    user = User(username=username, password_hash=hash_password(password), role=role)
+    password_hash = await asyncio.to_thread(hash_password, password)
+    user = User(username=username, password_hash=password_hash, role=role)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -139,7 +142,14 @@ async def login(payload: AuthRequest, db: AsyncSession = Depends(get_db)):
     username = payload.username.strip().lower()
     result = await db.execute(select(User).filter(User.username == username))
     user = result.scalar_one_or_none()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    password_valid = False
+    if user is not None:
+        password_valid = await asyncio.to_thread(
+            verify_password,
+            payload.password,
+            user.password_hash,
+        )
+    if user is None or not password_valid:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
     return AuthResponse(

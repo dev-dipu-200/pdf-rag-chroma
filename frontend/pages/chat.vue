@@ -108,9 +108,24 @@ const submitQuestion = async () => {
           activeSessionId.value = event.session_id
         }
 
+        if (event.type === 'status') {
+          const target = messages.value.find((message) => message.id === currentStreamingId)
+          if (target && !target.content) {
+            target.content = event.stage === 'retrieving'
+              ? 'Searching indexed documents...'
+              : 'Generating answer...'
+          }
+        }
+
         if (event.type === 'token') {
           const target = messages.value.find((message) => message.id === currentStreamingId)
           if (target) {
+            if (
+              target.content === 'Searching indexed documents...' ||
+              target.content === 'Generating answer...'
+            ) {
+              target.content = ''
+            }
             target.content += event.content || ''
           }
         }

@@ -2,7 +2,6 @@
 import json
 import logging
 import asyncio
-import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -12,15 +11,18 @@ from ollama import ResponseError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import EmbeddingInitializationError, ENABLE_OCR, OCR_LANGS, get_llm
+from app.dependencies import (
+    EmbeddingInitializationError,
+    get_llm,
+    get_vectorstore,
+    shared_collection_name,
+)
 from app.models import AnonymousQueryUsage, ChatMessage, ChatSession, PdfDocument, User
-from app.services.pdf import extract_and_chunk_pdf, sanitize_text_for_embedding
 from app.services.rag import PROMPT_TEMPLATE, build_answer_chain, format_docs
 
 logger = logging.getLogger(__name__)
 ANONYMOUS_QUERY_LIMIT = 3
 LLM_RETRY_ATTEMPTS = 2
-MIN_TERM_OVERLAP = 1
 
 
 @dataclass
@@ -74,15 +76,23 @@ def make_chat_title(question: str) -> str:
     return compact[:80] or "New chat"
 
 
-async def ensure_indexed_documents(db: AsyncSession) -> None:
-    result = await db.execute(
-        select(PdfDocument.id).filter(PdfDocument.status == "indexed").limit(1)
-    )
+async def ensure_indexed_documents(
+    db: AsyncSession,
+    current_user: User | None,
+) -> None:
+    stmt = select(PdfDocument.id).filter(PdfDocument.status == "indexed")
+    if current_user is not None:
+        stmt = stmt.filter(PdfDocument.user_id == current_user.id)
+    result = await db.execute(stmt.limit(1))
     has_docs = result.scalar_one_or_none()
     if has_docs is None:
         raise HTTPException(
             status_code=400,
-            detail="No indexed PDFs found. Upload PDFs and wait for indexing to finish.",
+            detail=(
+                "No indexed PDFs found."
+                if current_user is None
+                else "No indexed PDFs found in your account."
+            ),
         )
 
 
@@ -202,19 +212,25 @@ async def authorize_query(
     return await consume_anonymous_query(request, db)
 
 
-def _question_terms(question: str) -> set[str]:
-    return {
-        token
-        for token in re.findall(r"\w+", question.lower(), flags=re.UNICODE)
-        if len(token) > 1
-    }
+def _vectorstore_search(question: str, top_k: int, current_user: User | None):
+    vectorstore = get_vectorstore(shared_collection_name())
+    search_kwargs = {"k": top_k}
+    if current_user is not None:
+        search_kwargs["filter"] = {"user_id": str(current_user.id)}
+    return vectorstore.similarity_search(question, **search_kwargs)
 
 
-def _document_match_score(question_terms: set[str], content: str, metadata: dict) -> tuple[int, int]:
-    normalized = sanitize_text_for_embedding(content).lower()
-    overlap = sum(1 for term in question_terms if term in normalized)
-    page = int(str(metadata.get("page", "9999")).split("-", 1)[0]) if metadata.get("page") else 9999
-    return overlap, -page
+async def _get_vector_matches(
+    question: str,
+    top_k: int,
+    current_user: User | None,
+):
+    return await asyncio.to_thread(
+        _vectorstore_search,
+        question,
+        top_k,
+        current_user,
+    )
 
 
 async def get_relevant_context(
@@ -223,53 +239,12 @@ async def get_relevant_context(
     db: AsyncSession,
     current_user: User | None,
 ) -> tuple[list, list[str], str]:
-    stmt = select(PdfDocument).filter(PdfDocument.status == "indexed")
-    if current_user is not None:
-        stmt = stmt.filter(PdfDocument.user_id == current_user.id)
-    stmt = stmt.order_by(PdfDocument.created_at.asc())
-    result = await db.execute(stmt)
-    pdf_documents = result.scalars().all()
-
-    docs = []
-    for pdf_document in pdf_documents:
-        try:
-            docs.extend(
-                extract_and_chunk_pdf(
-                    pdf_document.stored_path,
-                    metadata={
-                        "source": pdf_document.original_filename,
-                        "document_id": str(pdf_document.id),
-                        "user_id": str(pdf_document.user_id),
-                    },
-                    enable_ocr=ENABLE_OCR,
-                    ocr_languages=OCR_LANGS,
-                    include_tree_documents=False,
-                )
-            )
-        except Exception as exc:
-            logger.warning(
-                "Parsed-PDF fallback failed for document %s: %s",
-                pdf_document.id,
-                exc,
-            )
-
+    docs = await _get_vector_matches(question, top_k, current_user)
     filtered_docs = [
         doc
         for doc in docs
         if doc.metadata.get("content_type") in {"page_chunk", "page"}
     ]
-
-    question_terms = _question_terms(question)
-    if question_terms:
-        filtered_docs.sort(
-            key=lambda doc: _document_match_score(question_terms, doc.page_content, doc.metadata),
-            reverse=True,
-        )
-        filtered_docs = [
-            doc
-            for doc in filtered_docs
-            if _document_match_score(question_terms, doc.page_content, doc.metadata)[0] >= MIN_TERM_OVERLAP
-        ]
 
     final_docs = filtered_docs[:top_k] if filtered_docs else docs[:top_k]
     try:
@@ -296,7 +271,7 @@ async def prepare_query_with_session(
     current_user: User | None,
     session_id: int | None,
 ) -> QueryPreparationResult:
-    await ensure_indexed_documents(db)
+    await ensure_indexed_documents(db, current_user)
     anonymous_remaining = await authorize_query(request, db, current_user)
     session = None
 

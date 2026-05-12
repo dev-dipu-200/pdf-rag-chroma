@@ -53,7 +53,7 @@ def _load_profile_env() -> str:
 ACTIVE_PROFILE = _load_profile_env()
 
 DEFAULT_ENV = "dev"
-DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+DEFAULT_EMBEDDING_MODEL = "qwen3-embedding:8b"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 ENV_LLM_DEFAULTS = {
     "dev": "llama3.2:3b",
@@ -103,17 +103,19 @@ def _load_runtime_settings() -> RuntimeSettings:
     ollama_url_default = (
         "http://ollama-service:11434" if env == "prod" else DEFAULT_OLLAMA_URL
     )
-    postgres_url_default = (
-        "postgresql://postgres:postgres@127.0.0.1:5432/pdf_rag"
-    )
+    postgres_url_default = "postgresql://postgres:postgres@127.0.0.1:5432/pdf_rag"
 
     return RuntimeSettings(
         env=env,
-        postgres_url=_first_env("POSTGRES_URL", "DATABASE_URL", default=postgres_url_default),
+        postgres_url=_first_env(
+            "POSTGRES_URL", "DATABASE_URL", default=postgres_url_default
+        ),
         redis_url=_first_env("REDIS_URL", default="redis://localhost:6379/0"),
         collection_name=_first_env("COLLECTION_NAME", default="pdf_docs"),
         llm_provider=_first_env("LLM_PROVIDER", default="ollama").lower(),
-        embedding_provider=_first_env("EMBEDDING_PROVIDER", default=_first_env("LLM_PROVIDER", default="ollama")).lower(),
+        embedding_provider=_first_env(
+            "EMBEDDING_PROVIDER", default=_first_env("LLM_PROVIDER", default="ollama")
+        ).lower(),
         chroma_persist_directory=_first_env(
             "CHROMA_PERSIST_DIRECTORY",
             default="./chroma_data",
@@ -130,18 +132,30 @@ def _load_runtime_settings() -> RuntimeSettings:
             int(_first_env("EMBEDDING_BATCH_SIZE", default="16")),
         ),
         llm_model=_first_env("LLM_MODEL", "OLLAMA_MODEL", default=llm_default),
-        ollama_url=_first_env("OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default),
+        ollama_url=_first_env(
+            "OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default
+        ),
         public_api_key=_first_env("PUBLIC_API_KEY", "OPENAI_API_KEY", default=""),
         public_api_base_url=_first_env("PUBLIC_API_BASE_URL", default=""),
-        public_llm_base_url=_first_env("PUBLIC_LLM_BASE_URL", "OPENAI_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
-        public_embedding_base_url=_first_env("PUBLIC_EMBEDDING_BASE_URL", default=_first_env("PUBLIC_API_BASE_URL", default="")),
+        public_llm_base_url=_first_env(
+            "PUBLIC_LLM_BASE_URL",
+            "OPENAI_BASE_URL",
+            default=_first_env("PUBLIC_API_BASE_URL", default=""),
+        ),
+        public_embedding_base_url=_first_env(
+            "PUBLIC_EMBEDDING_BASE_URL",
+            default=_first_env("PUBLIC_API_BASE_URL", default=""),
+        ),
         cors_allow_origins=_first_env(
             "CORS_ALLOW_ORIGINS",
             default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
         ),
         jwt_secret_key=_first_env("JWT_SECRET_KEY", default="change-me-in-production"),
-        access_token_expire_minutes=int(_first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")),
-        enable_ocr=_first_env("ENABLE_OCR", default="false").lower() in {"1", "true", "yes", "on"},
+        access_token_expire_minutes=int(
+            _first_env("ACCESS_TOKEN_EXPIRE_MINUTES", default="10080")
+        ),
+        enable_ocr=_first_env("ENABLE_OCR", default="false").lower()
+        in {"1", "true", "yes", "on"},
         ocr_languages=_first_env("OCR_LANGS", default="eng"),
         pdf_parser=_first_env("PDF_PARSER", default="hybrid").lower(),
     )
@@ -150,6 +164,7 @@ def _load_runtime_settings() -> RuntimeSettings:
 SETTINGS = _load_runtime_settings()
 
 POSTGRES_URL = SETTINGS.postgres_url
+
 
 # Helper for SQLAlchemy URLs
 def get_async_postgres_url() -> str:
@@ -160,6 +175,7 @@ def get_async_postgres_url() -> str:
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
     return url
 
+
 def get_sync_postgres_url() -> str:
     url = POSTGRES_URL
     if url.startswith("postgresql://"):
@@ -167,6 +183,8 @@ def get_sync_postgres_url() -> str:
     if "psycopg" not in url and "asyncpg" not in url:
         return url.replace("postgres://", "postgresql+psycopg://", 1)
     return url
+
+
 REDIS_URL = SETTINGS.redis_url
 COLLECTION_NAME = SETTINGS.collection_name
 LLM_PROVIDER = SETTINGS.llm_provider
@@ -255,7 +273,9 @@ async def _ensure_postgres_database_exists() -> None:
     # Convert asyncpg/other async schemes back to psycopg for the admin connection if needed
     # but psycopg 3 is async capable. We just need a simple check.
     # Note: admin_url from _split_postgres_url already has scheme normalized (no +asyncpg)
-    async with await psycopg.AsyncConnection.connect(admin_url, autocommit=True) as conn:
+    async with await psycopg.AsyncConnection.connect(
+        admin_url, autocommit=True
+    ) as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 "SELECT 1 FROM pg_database WHERE datname = %s",
@@ -264,9 +284,7 @@ async def _ensure_postgres_database_exists() -> None:
             if await cur.fetchone():
                 return
             await cur.execute(
-                sql.SQL("CREATE DATABASE {}").format(
-                    sql.Identifier(database_name)
-                )
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name))
             )
 
 
@@ -275,21 +293,15 @@ def _normalize_collection_name(name: str) -> str:
     return normalized or "default"
 
 
-RESOLVED_COLLECTION_NAME = _normalize_collection_name(
-    f"{COLLECTION_NAME}__{EMBEDDING_MODEL}"
-)
+RESOLVED_COLLECTION_NAME = _normalize_collection_name(f"{COLLECTION_NAME}")
 
 
 def user_collection_name(user_id: int) -> str:
-    return _normalize_collection_name(
-        f"{COLLECTION_NAME}__user_{user_id}__{EMBEDDING_MODEL}"
-    )
+    return _normalize_collection_name(f"{COLLECTION_NAME}__user_{user_id}")
 
 
 def shared_collection_name() -> str:
-    return _normalize_collection_name(
-        f"{COLLECTION_NAME}__shared__{EMBEDDING_MODEL}"
-    )
+    return _normalize_collection_name(f"{COLLECTION_NAME}__shared")
 
 
 def _get_chroma_client():

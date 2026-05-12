@@ -1,5 +1,5 @@
 # ingestion.py
-
+import asyncio
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +59,19 @@ def _file_hash(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _read_file_bytes(path: Path) -> bytes:
+    return path.read_bytes()
+
+
+def _write_file_bytes(path: Path, content: bytes) -> None:
+    path.write_bytes(content)
+
+
+def _delete_file_if_exists(path: Path) -> None:
+    if path.exists():
+        path.unlink()
+
+
 async def _find_duplicate_document(
     db: AsyncSession,
     user_id: int,
@@ -84,9 +97,10 @@ async def _find_duplicate_document(
     updated_legacy_hash = False
     for document in legacy_documents:
         stored_path = Path(document.stored_path)
-        if not stored_path.exists():
+        if not await asyncio.to_thread(stored_path.exists):
             continue
-        legacy_hash = _file_hash(stored_path.read_bytes())
+        legacy_bytes = await asyncio.to_thread(_read_file_bytes, stored_path)
+        legacy_hash = _file_hash(legacy_bytes)
         document.file_hash = legacy_hash
         updated_legacy_hash = True
         if legacy_hash == file_hash:
@@ -113,13 +127,12 @@ async def save_uploaded_pdf(file: UploadFile, current_user: User, db: AsyncSessi
             ),
         )
 
-    upload_dir = user_upload_dir(current_user.id)
+    upload_dir = await asyncio.to_thread(user_upload_dir, current_user.id)
     suffix = Path(file.filename).suffix.lower() or ".pdf"
     stored_filename = f"{uuid4().hex}{suffix}"
     stored_path = upload_dir / stored_filename
 
-    with stored_path.open("wb") as buffer:
-        buffer.write(content)
+    await asyncio.to_thread(_write_file_bytes, stored_path, content)
 
     document = PdfDocument(
         user_id=current_user.id,
@@ -197,19 +210,22 @@ def delete_document_vectors(document_id: int) -> None:
     collection.delete(where={"document_id": str(document_id)})
 
 
+async def delete_document_vectors_async(document_id: int) -> None:
+    await asyncio.to_thread(delete_document_vectors, document_id)
+
+
 async def delete_document(
     document: PdfDocument,
     db: AsyncSession,
 ) -> None:
     try:
-        delete_document_vectors(document.id)
+        await delete_document_vectors_async(document.id)
     except Exception:
         # Deleting metadata and the local file should still proceed if vector cleanup fails.
         pass
 
     stored_path = Path(document.stored_path)
-    if stored_path.exists():
-        stored_path.unlink()
+    await asyncio.to_thread(_delete_file_if_exists, stored_path)
 
     await db.delete(document)
     await db.commit()

@@ -77,7 +77,7 @@ APP_PORT=8000
 OLLAMA_PORT=11434
 POSTGRES_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5432/pdf_rag
 REDIS_URL=redis://redis:6379/0
-COLLECTION_NAME=pdf_docs_prod
+COLLECTION_NAME=vector_db
 CHROMA_PERSIST_DIRECTORY=./chroma_data
 EMBEDDING_MODEL=nomic-embed-text
 EMBEDDING_BATCH_SIZE=16
@@ -144,6 +144,12 @@ Services:
 - `postgres`: auth/history/document metadata database
 - `redis`: queue broker/backend
 - `chroma_data`: persisted ChromaDB collections
+
+Docling and OCR model caching:
+
+- The worker downloads Docling, Hugging Face, and RapidOCR models the first time the heavy parsing path runs.
+- Those caches are persisted in Docker volumes so later `docker compose down` and `docker compose up` cycles do not force the same model downloads again.
+- The first ingestion after enabling `PDF_PARSER=docling` and `ENABLE_OCR=true` will still be slower than later ingestions.
 
 ## Main flow
 
