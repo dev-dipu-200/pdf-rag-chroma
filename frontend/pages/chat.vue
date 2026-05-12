@@ -16,6 +16,7 @@ const error = ref('')
 const loadingSessions = ref(true)
 const topK = ref(5)
 const hindiTyping = ref(false)
+const questionInput = ref<HTMLTextAreaElement | null>(null)
 
 const transliteratedQuestion = computed(() => {
   if (!hindiTyping.value) {
@@ -52,6 +53,7 @@ const startNewChat = async () => {
   sessions.value = [session, ...sessions.value]
   activeSessionId.value = session.id
   messages.value = []
+  error.value = ''
 }
 
 const removeSession = async (sessionId: number) => {
@@ -68,14 +70,17 @@ const clearSessions = async () => {
   sessions.value = []
   activeSessionId.value = null
   messages.value = []
+  error.value = ''
 }
 
-const submitQuestion = async () => {
-  if (!transliteratedQuestion.value.trim() || sending.value) {
+const sendQuestion = async (questionText?: string) => {
+  const fallbackText = transliteratedQuestion.value.trim()
+  const text = (questionText || fallbackText).trim()
+
+  if (!text || sending.value) {
     return
   }
 
-  const text = transliteratedQuestion.value.trim()
   const currentStreamingId = `stream-${Date.now()}`
   error.value = ''
   sending.value = true
@@ -94,7 +99,9 @@ const submitQuestion = async () => {
     sources: []
   })
 
-  rawQuestion.value = ''
+  if (!questionText) {
+    rawQuestion.value = ''
+  }
 
   try {
     await api.streamQuery(
@@ -158,6 +165,25 @@ const submitQuestion = async () => {
   }
 }
 
+const submitQuestion = async () => {
+  await sendQuestion()
+}
+
+const resendQuestion = async (content: string) => {
+  if (!activeSessionId.value) {
+    return
+  }
+  await sendQuestion(content)
+}
+
+const editQuestion = (content: string) => {
+  rawQuestion.value = content
+  nextTick(() => {
+    questionInput.value?.focus()
+    questionInput.value?.setSelectionRange(rawQuestion.value.length, rawQuestion.value.length)
+  })
+}
+
 await auth.restore()
 await loadSessions()
 </script>
@@ -169,10 +195,13 @@ await loadSessions()
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold text-slate-900">Sessions</h2>
           <button
-            class="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+            type="button"
+            title="New chat"
+            aria-label="New chat"
+            class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white"
             @click="startNewChat"
           >
-            New
+            <span aria-hidden="true" class="text-lg leading-none">+</span>
           </button>
         </div>
 
@@ -180,10 +209,13 @@ await loadSessions()
           <label class="text-sm font-medium text-slate-600">Top K</label>
           <input v-model="topK" type="number" min="1" max="10" class="w-20 rounded-xl border border-slate-200 px-3 py-2 text-sm">
           <button
-            class="rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:border-red-300 hover:text-red-600"
+            type="button"
+            title="Clear all sessions"
+            aria-label="Clear all sessions"
+            class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-base text-slate-600 transition hover:border-red-300 hover:text-red-600"
             @click="clearSessions"
           >
-            Clear all
+            <span aria-hidden="true">🗑</span>
           </button>
         </div>
 
@@ -201,12 +233,15 @@ await loadSessions()
                 <p class="truncate text-sm font-semibold text-slate-900">{{ session.title }}</p>
                 <p class="mt-1 text-xs text-slate-500">{{ new Date(session.updated_at).toLocaleString() }}</p>
               </div>
-              <span
-                class="rounded-full px-2 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50"
+              <button
+                type="button"
+                title="Delete session"
+                aria-label="Delete session"
+                class="flex h-8 w-8 items-center justify-center rounded-full text-sm text-red-600 transition hover:bg-red-50"
                 @click.stop="removeSession(session.id)"
               >
-                Delete
-              </span>
+                <span aria-hidden="true">✕</span>
+              </button>
             </div>
           </button>
         </div>
@@ -231,6 +266,30 @@ await loadSessions()
               {{ message.role }}
             </p>
             <p class="whitespace-pre-wrap text-sm leading-7">{{ message.content }}</p>
+            <div
+              v-if="message.role === 'user' && message.content"
+              class="mt-4 flex items-center justify-end gap-2"
+            >
+              <button
+                type="button"
+                title="Ask again in this session"
+                aria-label="Ask again in this session"
+                class="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="sending"
+                @click="resendQuestion(message.content)"
+              >
+                <span aria-hidden="true">↻</span>
+              </button>
+              <button
+                type="button"
+                title="Edit question"
+                aria-label="Edit question"
+                class="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm text-white transition hover:border-white/40 hover:bg-white/10"
+                @click="editQuestion(message.content)"
+              >
+                <span aria-hidden="true">✎</span>
+              </button>
+            </div>
             <div v-if="message.sources?.length" class="mt-4 border-t border-slate-200 pt-3">
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Sources</p>
               <ul class="mt-2 space-y-1 text-sm text-slate-600">
@@ -261,6 +320,7 @@ await loadSessions()
           <form class="flex flex-col gap-3 md:flex-row" @submit.prevent="submitQuestion">
             <div class="flex-1 space-y-3">
               <textarea
+                ref="questionInput"
                 v-model="rawQuestion"
                 rows="3"
                 :placeholder="hindiTyping ? 'Type in Roman Hindi, for example: mera naam dipu hai' : 'Ask something about the uploaded PDFs...'"

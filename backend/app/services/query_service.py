@@ -7,6 +7,7 @@ from datetime import datetime
 
 from fastapi import HTTPException, Request, status
 import httpx
+from chromadb.errors import NotFoundError as ChromaNotFoundError
 from ollama import ResponseError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,8 @@ from app.dependencies import (
     EmbeddingInitializationError,
     get_llm,
     get_vectorstore,
+    invalidate_vectorstore,
+    ollama_headers,
     shared_collection_name,
 )
 from app.models import AnonymousQueryUsage, ChatMessage, ChatSession, PdfDocument, User
@@ -213,11 +216,19 @@ async def authorize_query(
 
 
 def _vectorstore_search(question: str, top_k: int, current_user: User | None):
-    vectorstore = get_vectorstore(shared_collection_name())
     search_kwargs = {"k": top_k}
     if current_user is not None:
         search_kwargs["filter"] = {"user_id": str(current_user.id)}
-    return vectorstore.similarity_search(question, **search_kwargs)
+    collection_name = shared_collection_name()
+    vectorstore = get_vectorstore(collection_name)
+    try:
+        return vectorstore.similarity_search(question, **search_kwargs)
+    except ChromaNotFoundError as exc:
+        if "soft deleted" not in str(exc).lower():
+            raise
+        invalidate_vectorstore(collection_name)
+        refreshed_vectorstore = get_vectorstore(collection_name)
+        return refreshed_vectorstore.similarity_search(question, **search_kwargs)
 
 
 async def _get_vector_matches(
@@ -349,8 +360,13 @@ async def generate_answer(context: str, question: str) -> str:
     for attempt in range(LLM_RETRY_ATTEMPTS):
         try:
             llm = get_llm()
-            chain = build_answer_chain(llm)
-            answer = (await chain.ainvoke({"context": context, "question": question})).strip()
+            if isinstance(llm, dict) and llm.get("provider") == "public":
+                answer = await _generate_public_answer(llm, context, question)
+            elif isinstance(llm, dict) and llm.get("provider") == "ollama_remote":
+                answer = await _generate_remote_ollama_answer(llm, context, question)
+            else:
+                chain = build_answer_chain(llm)
+                answer = (await chain.ainvoke({"context": context, "question": question})).strip()
             if not answer:
                 return "I couldn't find the answer in the uploaded documents."
             return answer
@@ -373,6 +389,10 @@ async def stream_answer_chunks(context: str, question: str):
             llm = get_llm()
             if isinstance(llm, dict) and llm.get("provider") == "public":
                 async for chunk in _stream_public_answer(llm, context, question):
+                    yield chunk
+                return
+            if isinstance(llm, dict) and llm.get("provider") == "ollama_remote":
+                async for chunk in _stream_remote_ollama_answer(llm, context, question):
                     yield chunk
                 return
 
@@ -403,6 +423,15 @@ def _public_chat_url(base_url: str) -> str:
     if cleaned.endswith("/chat/completions"):
         return cleaned
     return f"{cleaned}/chat/completions"
+
+
+def _ollama_generate_url(base_url: str) -> str:
+    cleaned = (base_url or "").rstrip("/")
+    if not cleaned:
+        raise RuntimeError("Missing OLLAMA_URL or OLLAMA_BASE_URL.")
+    if cleaned.endswith("/api/generate"):
+        return cleaned
+    return f"{cleaned}/api/generate"
 
 
 async def _generate_public_answer(llm_config: dict, context: str, question: str) -> str:
@@ -457,3 +486,47 @@ async def _stream_public_answer(llm_config: dict, context: str, question: str):
                 content = delta.get("content")
                 if content:
                     yield content
+
+
+async def _generate_remote_ollama_answer(llm_config: dict, context: str, question: str) -> str:
+    payload = {
+        "model": llm_config["model"],
+        "prompt": PROMPT_TEMPLATE.format(context=context, question=question),
+        "stream": False,
+        "options": {"temperature": llm_config.get("temperature", 0.15)},
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=30.0)) as client:
+        response = await client.post(
+            _ollama_generate_url(llm_config["base_url"]),
+            headers=ollama_headers(llm_config.get("api_key", "")),
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+    return (data.get("response") or "").strip()
+
+
+async def _stream_remote_ollama_answer(llm_config: dict, context: str, question: str):
+    payload = {
+        "model": llm_config["model"],
+        "prompt": PROMPT_TEMPLATE.format(context=context, question=question),
+        "stream": True,
+        "options": {"temperature": llm_config.get("temperature", 0.15)},
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=30.0)) as client:
+        async with client.stream(
+            "POST",
+            _ollama_generate_url(llm_config["base_url"]),
+            headers=ollama_headers(llm_config.get("api_key", "")),
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                payload = json.loads(line)
+                content = payload.get("response")
+                if content:
+                    yield content
+                if payload.get("done"):
+                    break

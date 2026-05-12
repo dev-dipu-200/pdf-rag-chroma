@@ -85,6 +85,7 @@ class RuntimeSettings:
     embedding_batch_size: int
     llm_model: str
     ollama_url: str
+    ollama_api_key: str
     public_api_key: str
     public_api_base_url: str
     public_llm_base_url: str
@@ -135,6 +136,7 @@ def _load_runtime_settings() -> RuntimeSettings:
         ollama_url=_first_env(
             "OLLAMA_URL", "OLLAMA_BASE_URL", default=ollama_url_default
         ),
+        ollama_api_key=_first_env("OLLAMA_API_KEY", "PUBLIC_API_KEY", "OPENAI_API_KEY", default=""),
         public_api_key=_first_env("PUBLIC_API_KEY", "OPENAI_API_KEY", default=""),
         public_api_base_url=_first_env("PUBLIC_API_BASE_URL", default=""),
         public_llm_base_url=_first_env(
@@ -197,6 +199,7 @@ EMBEDDING_MODEL = SETTINGS.embedding_model
 EMBEDDING_BATCH_SIZE = SETTINGS.embedding_batch_size
 OLLAMA_MODEL = SETTINGS.llm_model
 OLLAMA_BASE_URL = SETTINGS.ollama_url
+OLLAMA_API_KEY = SETTINGS.ollama_api_key
 PUBLIC_API_KEY = SETTINGS.public_api_key
 PUBLIC_API_BASE_URL = SETTINGS.public_api_base_url
 PUBLIC_LLM_BASE_URL = SETTINGS.public_llm_base_url
@@ -252,6 +255,53 @@ class PublicAPIEmbeddings:
             payload = response.json()
         data = payload.get("data") or []
         return [item["embedding"] for item in data]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+
+def _normalize_ollama_base_url(base_url: str) -> str:
+    cleaned = base_url.rstrip("/")
+    if not cleaned:
+        raise EmbeddingInitializationError(
+            "Missing OLLAMA_URL or OLLAMA_BASE_URL for Ollama embeddings."
+        )
+    return cleaned
+
+
+def ollama_headers(api_key: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+class RemoteOllamaEmbeddings:
+    def __init__(self, model: str, base_url: str, api_key: str = "") -> None:
+        self.model = model
+        self.base_url = _normalize_ollama_base_url(base_url)
+        self.api_key = api_key
+        self.timeout = httpx.Timeout(180.0, connect=30.0)
+
+    def _embed_url(self) -> str:
+        return f"{self.base_url}/api/embed"
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(
+                self._embed_url(),
+                headers=ollama_headers(self.api_key),
+                json={"model": self.model, "input": texts},
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+        embeddings = payload.get("embeddings")
+        if isinstance(embeddings, list) and embeddings and isinstance(embeddings[0], list):
+            return embeddings
+        if isinstance(embeddings, list) and texts and len(texts) == 1:
+            return [embeddings]
+        raise RuntimeError("Remote Ollama embeddings response did not include embeddings.")
 
     def embed_query(self, text: str) -> list[float]:
         return self.embed_documents([text])[0]
@@ -338,6 +388,12 @@ def get_embeddings():
                     base_url=PUBLIC_EMBEDDING_BASE_URL or PUBLIC_API_BASE_URL,
                     api_key=PUBLIC_API_KEY,
                 )
+            elif OLLAMA_API_KEY:
+                _embeddings = RemoteOllamaEmbeddings(
+                    model=EMBEDDING_MODEL,
+                    base_url=OLLAMA_BASE_URL,
+                    api_key=OLLAMA_API_KEY,
+                )
             else:
                 _embeddings = OllamaEmbeddings(
                     model=EMBEDDING_MODEL,
@@ -386,6 +442,14 @@ def get_llm():
             "model": OLLAMA_MODEL,
             "base_url": PUBLIC_LLM_BASE_URL or PUBLIC_API_BASE_URL,
             "api_key": PUBLIC_API_KEY,
+            "temperature": 0.15,
+        }
+    if OLLAMA_API_KEY:
+        return {
+            "provider": "ollama_remote",
+            "model": OLLAMA_MODEL,
+            "base_url": OLLAMA_BASE_URL,
+            "api_key": OLLAMA_API_KEY,
             "temperature": 0.15,
         }
     return OllamaLLM(
