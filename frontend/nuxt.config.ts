@@ -11,7 +11,7 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'Archive Desk',
+      title: 'Pdf Chatbot',
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Sanscript from 'sanscript'
+import Sanscript from '@indic-transliteration/sanscript'
 import type { ChatMessage, ChatSession } from '~/types/api'
 
 definePageMeta({ middleware: 'auth' })
@@ -24,7 +24,7 @@ const transliteratedQuestion = computed(() => {
   }
 
   try {
-    return Sanscript.t(rawQuestion.value, 'itrans', 'devanagari')
+    return Sanscript.t(rawQuestion.value, 'itrans', 'devanagari', { syncope: true })
   } catch {
     return rawQuestion.value
   }
@@ -191,55 +191,45 @@ await loadSessions()
 <template>
   <AppShell>
     <div class="grid flex-1 gap-6 lg:grid-cols-[320px_1fr]">
-      <aside class="rounded-[2rem] border border-white/60 bg-white/80 p-5 shadow-panel backdrop-blur">
+      <aside class="glass-card rounded-[2rem] p-5">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-slate-900">Sessions</h2>
-          <button
-            type="button"
-            title="New chat"
-            aria-label="New chat"
-            class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white"
-            @click="startNewChat"
-          >
+          <div>
+            <p class="soft-label">Workspace</p>
+            <h2 class="mt-1 text-2xl font-semibold text-slate-900">Sessions</h2>
+          </div>
+          <button type="button" title="New chat" aria-label="New chat"
+            class="flex h-11 w-11 items-center justify-center rounded-full bg-slate-950 text-white shadow-lg shadow-slate-900/15"
+            @click="startNewChat">
             <span aria-hidden="true" class="text-lg leading-none">+</span>
           </button>
         </div>
 
         <div class="mt-4 flex items-center gap-3">
-          <label class="text-sm font-medium text-slate-600">Top K</label>
-          <input v-model="topK" type="number" min="1" max="10" class="w-20 rounded-xl border border-slate-200 px-3 py-2 text-sm">
-          <button
-            type="button"
-            title="Clear all sessions"
-            aria-label="Clear all sessions"
-            class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-base text-slate-600 transition hover:border-red-300 hover:text-red-600"
-            @click="clearSessions"
-          >
+          <template v-if="auth.user.value?.role === 'admin'">
+            <label class="text-sm font-medium text-slate-600">Top K</label>
+            <input v-model="topK" type="number" min="1" max="10" class="field-input w-20 rounded-xl px-3 py-2 text-sm">
+          </template>
+          <button type="button" title="Clear all sessions" aria-label="Clear all sessions"
+            class="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-base text-slate-600 transition hover:border-red-300 hover:text-red-600"
+            @click="clearSessions">
             <span aria-hidden="true">🗑</span>
           </button>
         </div>
 
         <div class="mt-5 space-y-3">
           <p v-if="loadingSessions" class="text-sm text-slate-500">Loading sessions...</p>
-          <button
-            v-for="session in sessions"
-            :key="session.id"
-            class="block w-full rounded-2xl border px-4 py-3 text-left transition"
-            :class="activeSessionId === session.id ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'"
-            @click="loadMessages(session.id)"
-          >
+          <button v-for="session in sessions" :key="session.id"
+            class="block w-full rounded-[1.35rem] border px-4 py-3 text-left transition duration-200"
+            :class="activeSessionId === session.id ? 'border-sky-300 bg-gradient-to-r from-sky-50 to-white shadow-lg shadow-sky-100/60' : 'border-slate-200 bg-white/72 hover:border-slate-300 hover:bg-white'"
+            @click="loadMessages(session.id)">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-sm font-semibold text-slate-900">{{ session.title }}</p>
                 <p class="mt-1 text-xs text-slate-500">{{ new Date(session.updated_at).toLocaleString() }}</p>
               </div>
-              <button
-                type="button"
-                title="Delete session"
-                aria-label="Delete session"
+              <button type="button" title="Delete session" aria-label="Delete session"
                 class="flex h-8 w-8 items-center justify-center rounded-full text-sm text-red-600 transition hover:bg-red-50"
-                @click.stop="removeSession(session.id)"
-              >
+                @click.stop="removeSession(session.id)">
                 <span aria-hidden="true">✕</span>
               </button>
             </div>
@@ -247,53 +237,43 @@ await loadSessions()
         </div>
       </aside>
 
-      <section class="flex min-h-[70vh] flex-col rounded-[2rem] border border-white/60 bg-white/80 p-5 shadow-panel backdrop-blur">
+      <section class="glass-card relative flex min-h-[70vh] flex-col overflow-hidden rounded-[2rem] p-5">
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/35 to-transparent" />
         <div class="flex-1 space-y-4 overflow-y-auto pr-1">
-          <div v-if="messages.length === 0" class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-            <h2 class="text-xl font-semibold text-slate-900">Start a conversation</h2>
-            <p class="mt-2 text-sm text-slate-600">
+          <div v-if="messages.length === 0"
+            class="rounded-[2rem] border border-dashed border-slate-300 bg-white/55 p-10 text-center">
+            <p class="soft-label">Ready</p>
+            <h2 class="mt-3 text-3xl font-semibold text-slate-900">Start a conversation</h2>
+            <p class="mt-3 text-sm leading-7 text-slate-600">
               Ask questions about your indexed PDF collection. Admins can upload and reindex from the documents page.
             </p>
           </div>
 
-          <div
-            v-for="message in messages"
-            :key="message.id"
-            class="rounded-3xl p-5"
-            :class="message.role === 'user' ? 'ml-auto max-w-3xl bg-slate-900 text-white' : 'mr-auto max-w-4xl bg-slate-50 text-slate-900'"
-          >
-            <p class="mb-3 text-xs font-semibold uppercase tracking-[0.25em] opacity-70">
+          <div v-for="message in messages" :key="message.id" class="rounded-[1.8rem] p-5 shadow-sm" :class="message.role === 'user'
+            ? 'ml-auto max-w-3xl bg-[linear-gradient(135deg,#101a2c_0%,#1b2b43_100%)] text-white shadow-xl shadow-slate-900/12'
+            : 'mr-auto max-w-4xl border border-white/70 bg-white/72 text-slate-900'">
+            <p class="mb-3 text-xs font-semibold uppercase tracking-[0.25em] opacity-65">
               {{ message.role }}
             </p>
             <p class="whitespace-pre-wrap text-sm leading-7">{{ message.content }}</p>
-            <div
-              v-if="message.role === 'user' && message.content"
-              class="mt-4 flex items-center justify-end gap-2"
-            >
-              <button
-                type="button"
-                title="Ask again in this session"
-                aria-label="Ask again in this session"
+            <div v-if="message.role === 'user' && message.content" class="mt-4 flex items-center justify-end gap-2">
+              <button type="button" title="Ask again in this session" aria-label="Ask again in this session"
                 class="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm text-white transition hover:border-white/40 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="sending"
-                @click="resendQuestion(message.content)"
-              >
+                :disabled="sending" @click="resendQuestion(message.content)">
                 <span aria-hidden="true">↻</span>
               </button>
-              <button
-                type="button"
-                title="Edit question"
-                aria-label="Edit question"
+              <button type="button" title="Edit question" aria-label="Edit question"
                 class="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-sm text-white transition hover:border-white/40 hover:bg-white/10"
-                @click="editQuestion(message.content)"
-              >
+                @click="editQuestion(message.content)">
                 <span aria-hidden="true">✎</span>
               </button>
             </div>
-            <div v-if="message.sources?.length" class="mt-4 border-t border-slate-200 pt-3">
+            <div v-if="message.sources?.length" class="mt-4 border-t border-slate-200/80 pt-3">
               <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Sources</p>
-              <ul class="mt-2 space-y-1 text-sm text-slate-600">
-                <li v-for="source in message.sources" :key="source">{{ source }}</li>
+              <ul class="mt-2 space-y-2 text-sm text-slate-600">
+                <li v-for="source in message.sources" :key="source" class="rounded-2xl bg-slate-50/90 px-3 py-2">
+                  {{ source }}
+                </li>
               </ul>
             </div>
           </div>
@@ -303,42 +283,26 @@ await loadSessions()
           <p v-if="error" class="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {{ error }}
           </p>
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div>
-              <p class="text-sm font-semibold text-slate-900">Hindi typing</p>
-              <p class="text-xs text-slate-500">Type in Roman Hindi and send Devanagari text.</p>
-            </div>
-            <button
-              type="button"
-              class="rounded-full px-4 py-2 text-xs font-semibold transition"
-              :class="hindiTyping ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700'"
-              @click="hindiTyping = !hindiTyping"
-            >
+          <div class="mb-3 flex justify-end">
+            <button type="button" class="rounded-full px-4 py-2 text-xs font-semibold transition"
+              :class="hindiTyping ? 'bg-slate-950 text-white shadow-lg shadow-slate-900/10' : 'border border-slate-200 bg-white text-slate-700'"
+              @click="hindiTyping = !hindiTyping">
               {{ hindiTyping ? 'Hindi On' : 'Hindi Off' }}
             </button>
           </div>
           <form class="flex flex-col gap-3 md:flex-row" @submit.prevent="submitQuestion">
             <div class="flex-1 space-y-3">
-              <textarea
-                ref="questionInput"
-                v-model="rawQuestion"
-                rows="3"
+              <textarea ref="questionInput" v-model="rawQuestion" rows="3"
                 :placeholder="hindiTyping ? 'Type in Roman Hindi, for example: mera naam dipu hai' : 'Ask something about the uploaded PDFs...'"
-                class="min-h-[88px] w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-sky-400"
-              />
-              <div
-                v-if="hindiTyping && rawQuestion.trim()"
-                class="rounded-3xl border border-orange-200 bg-orange-50 px-4 py-3"
-              >
+                class="field-input min-h-[88px] rounded-[1.7rem] bg-white/82" />
+              <div v-if="hindiTyping && rawQuestion.trim()"
+                class="rounded-[1.6rem] border border-orange-200 bg-orange-50/90 px-4 py-3">
                 <p class="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700">Hindi preview</p>
                 <p class="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-900">{{ transliteratedQuestion }}</p>
               </div>
             </div>
-            <button
-              type="submit"
-              :disabled="sending"
-              class="rounded-3xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <button type="submit" :disabled="sending"
+              class="primary-button rounded-[1.7rem] px-6 disabled:cursor-not-allowed disabled:opacity-60">
               {{ sending ? 'Sending...' : 'Send' }}
             </button>
           </form>

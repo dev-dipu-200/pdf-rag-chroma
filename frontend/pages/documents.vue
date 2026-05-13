@@ -94,38 +94,45 @@ await loadDocuments()
 <template>
   <AppShell>
     <div class="grid gap-6 lg:grid-cols-[420px_1fr]">
-      <section class="rounded-[2rem] border border-white/60 bg-white/80 p-6 shadow-panel backdrop-blur">
-        <p class="text-sm font-semibold uppercase tracking-[0.25em] text-orange-600">Admin</p>
-        <h2 class="mt-2 text-2xl font-bold text-slate-900">Document operations</h2>
-        <p class="mt-2 text-sm leading-6 text-slate-600">
+      <section class="glass-card rounded-[2rem] p-6">
+        <p class="soft-label text-orange-700">Admin</p>
+        <h2 class="mt-2 text-3xl font-bold text-slate-900">Document operations</h2>
+        <p class="mt-3 text-sm leading-7 text-slate-600">
           Upload PDFs to the shared knowledge base, trigger reindexing, or delete stale documents.
         </p>
 
-        <div class="mt-6 space-y-4">
+        <div class="mt-6 rounded-[1.8rem] bg-slate-950 px-5 py-6 text-white">
+          <p class="text-sm font-semibold uppercase tracking-[0.22em] text-white/55">Upload queue</p>
+          <p class="mt-3 text-sm leading-7 text-white/80">
+            Drop one or more PDFs here, then push them into the indexing pipeline.
+          </p>
+
           <input
             type="file"
             multiple
             accept="application/pdf"
-            class="block w-full rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 file:mr-4 file:rounded-full file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+            class="mt-5 block w-full rounded-[1.8rem] border border-dashed border-white/20 bg-white/8 px-4 py-6 text-sm text-white/80 file:mr-4 file:rounded-full file:border-0 file:bg-white file:px-4 file:py-2 file:text-sm file:font-semibold file:text-slate-900"
             @change="onFileChange"
           >
 
-          <div class="flex flex-wrap gap-3">
+          <div class="mt-5 flex flex-wrap gap-3">
             <button
-              class="rounded-full bg-orange-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
+              class="primary-button disabled:opacity-60"
               :disabled="uploading"
               @click="upload"
             >
               {{ uploading ? 'Uploading...' : 'Upload PDFs' }}
             </button>
             <button
-              class="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-sky-300 hover:text-sky-700"
+              class="rounded-full border border-white/18 bg-white/8 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/12"
               @click="reindex"
             >
               Reindex all
             </button>
           </div>
+        </div>
 
+        <div class="mt-4 space-y-4">
           <p v-if="status" class="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
             {{ status }}
           </p>
@@ -135,18 +142,18 @@ await loadDocuments()
         </div>
       </section>
 
-      <section class="rounded-[2rem] border border-white/60 bg-white/80 p-6 shadow-panel backdrop-blur">
+      <section class="glass-card rounded-[2rem] p-6">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <p class="text-sm font-semibold uppercase tracking-[0.25em] text-sky-700">Archive</p>
-            <h2 class="mt-2 text-2xl font-bold text-slate-900">Indexed documents</h2>
+            <p class="soft-label text-sky-700">Archive</p>
+            <h2 class="mt-2 text-3xl font-bold text-slate-900">Indexed documents</h2>
           </div>
-          <div class="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
+          <div class="rounded-[1.25rem] bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/12">
             Total {{ total }}
           </div>
         </div>
 
-        <div class="mt-6 overflow-x-auto">
+        <div class="mt-6 overflow-x-auto rounded-[1.6rem] border border-white/60 bg-white/65 px-4 py-2">
           <table class="min-w-full text-left text-sm">
             <thead>
               <tr class="border-b border-slate-200 text-slate-500">
@@ -194,7 +201,7 @@ await loadDocuments()
 
         <div class="mt-6 flex items-center justify-between">
           <button
-            class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 disabled:opacity-40"
+            class="secondary-button px-4 py-2 disabled:opacity-40"
             :disabled="page <= 1"
             @click="page -= 1; loadDocuments()"
           >
@@ -202,7 +209,7 @@ await loadDocuments()
           </button>
           <p class="text-sm text-slate-600">Page {{ page }} of {{ pages }}</p>
           <button
-            class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 disabled:opacity-40"
+            class="secondary-button px-4 py-2 disabled:opacity-40"
             :disabled="page >= pages"
             @click="page += 1; loadDocuments()"
           >
